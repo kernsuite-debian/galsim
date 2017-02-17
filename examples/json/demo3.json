@@ -1,0 +1,106 @@
+{
+"#" : "Demo #3",
+
+"#" : "The third JSON configuration file in our tutorial about using Galsim config files",
+"#" : "(This file is designed to be viewed in a window 100 characters wide.)",
+  
+"#" : "This script gets reasonably close to including all the principal features of an image",
+"#" : "from a ground-based telescope.  The galaxy is represented as the sum of a bulge and a disk,",
+"#" : "where each component is represented by a sheared Sersic profile (with different Sersic",
+"#" : "indices).  The PSF has both atmospheric and optical components.  The atmospheric",
+"#" : "component is a Kolmogorov turbulent spectrum. The optical component includes defocus,",
+"#" : "coma and astigmatism, as well as obscuration from a secondary mirror.  The noise model",
+"#" : "includes both a gain and read noise.  And finally, we include the effect of a slight",
+"#" : "telescope distortion.",
+      
+"#" : "See demo3.yaml for more extensive commentary about the features here.",
+
+"gal" : {
+    "type" : "Sum",
+
+    "items" : [
+        {
+            "type" : "Sersic",
+            "n" : 3.5,
+            "half_light_radius" : 2.3,
+            "flux" : 0.3 
+        }, 
+        {
+            "type" : "Sersic",
+            "n" : 1.5,
+            "scale_radius" : 0.85,
+            "flux" : 0.7
+        }
+    ],
+
+    "shear" :  {
+        "type" : "QBeta",
+        "q" : 0.73,
+        "beta" : "23 degrees"
+    },
+
+    "flux" : 1e6
+},
+ 
+"psf" : {
+    "type" : "Convolution",
+
+    "items" : [
+        {
+            "type" : "Kolmogorov",
+            "fwhm" : 2.1,
+            "ellip" : {
+                "type" : "EBeta",
+                "e" : 0.13,
+                "beta" : "0.81 radians"
+            }
+        },
+        {
+            "type" : "OpticalPSF",
+            "lam_over_diam" : {
+                "type" : "Eval",
+                "str" : "800 * 1.e-9 / 4 * 206265"
+            },
+            "defocus" : 0.53,
+            "astig1" : -0.29,
+            "astig2" : 0.12,
+            "coma1" : 0.64,
+            "coma2" : -0.33,
+            "obscuration" : 0.3
+        }
+    ]
+},
+
+"image" : {
+    "pixel_scale" : 0.23,
+    "size" : 64,
+   
+    "wcs" : {
+        "type" : "Shear",
+        "shear" : {
+            "type" : "G1G2",
+            "g1" : -0.02,
+            "g2" : 0.01
+        }
+    },
+
+    "noise" : {
+        "type" : "CCD",
+        "sky_level" : 2.5e4,
+        "gain" : 1.7,
+        "read_noise" : 0.3
+    },
+
+    "random_seed" : 1314662
+},
+
+"output" : {
+    "dir" : "output_json",
+    "file_name" : "demo3.fits",
+    
+    "psf" : {
+        "file_name" : "demo3_epsf.fits"
+    }
+}
+
+}

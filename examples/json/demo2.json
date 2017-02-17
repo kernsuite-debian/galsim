@@ -1,0 +1,39 @@
+{
+"#" : "Demo #2",
+
+"#" : "The second JSON configuration file in our tutorial about using Galsim config files",
+"#" : "(This file is designed to be viewed in a window 100 characters wide.)",
+
+"#" : "This script is a bit more sophisticated, but still pretty basic.  We're still only making",
+"#" : "a single image, but now the galaxy has an exponential radial profile and is sheared.",
+"#" : "The PSF is a circular Moffat profile.  The noise is drawn from a Poisson distribution",
+"#" : "using the flux from both the object and a background sky level to determine the",
+"#" : "variance in each pixel.",
+
+"#" : "See demo2.yaml for more extensive commentary about the features here.",
+
+"gal" : {
+    "type" : "Exponential",
+    "scale_radius" : 2.7,
+    "flux" : 1e5,
+    "shear" :  { "type" : "G1G2", "g1" : 0.1, "g2" : 0.2 }
+},
+ 
+"psf" : {
+    "type" : "Moffat",
+    "beta" : 5.0,
+    "half_light_radius" : 1.0
+},
+
+"image" : {
+    "pixel_scale" : 0.2,
+    "noise" : { "type" : "Poisson", "sky_level" : 2.5e3 },
+    "random_seed" : 1534225
+},
+
+"output" : {
+    "dir" : "output_json",
+    "file_name" : "demo2.fits"
+}
+
+}

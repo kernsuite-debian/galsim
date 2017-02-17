@@ -1,0 +1,131 @@
+{
+"#" : "Demo #7",
+
+"#" : "The seventh JSON configuration file in our tutorial about using Galsim config files",
+"#" : "(This file is designed to be viewed in a window 100 characters wide.)",
+
+"#" : "This script introduces drawing profiles with photon shooting rather than doing the ",
+"#" : "convolution with an FFT.  It makes images using 5 different kinds of PSF and 5 different",
+"#" : "kinds of galaxy.  Some of the parameters (flux, size and shape) are random variables, so ",
+"#" : "each of the 25 pairings is drawn 4 times with different realizations of the random numbers.",
+"#" : "The profiles are drawn twice: once with the FFT method, and once with photon shooting.",
+"#" : "The two images are drawn side by side into the same larger image so it is easy to",
+"#" : "visually compare the results. The 100 total profiles are written to a FITS data cube,",
+"#" : "which makes it easy to scroll through the images comparing the two drawing methods.",
+
+"#" : "See demo7.yaml for more extensive commentary about the features here.",
+
+"psf" : {
+    "type" : "List",
+    "items" : [
+        {
+            "type" : "Gaussian",
+            "fwhm" : 0.65
+        },
+        {
+            "type" : "Moffat",
+            "fwhm" : 0.65,
+            "beta" : 2.4
+        },
+        {
+            "type" : "Sum",
+            "items" : [
+                { "type" : "Gaussian" , "flux" : 0.8 , "fwhm" : 0.65 },
+                { "type" : "Gaussian" , "flux" : 0.2 , "fwhm" : 1.3 }
+            ]
+        },
+        {
+            "type" : "Convolution",
+            "items" : [
+                { "type" : "Gaussian" , "fwhm" : 0.65 },
+                {
+                  "type" : "OpticalPSF" , 
+                  "lam_over_diam" : 0.39,
+                  "obscuration" : 0.4,
+                  "aberrations" : [ 0.06, 0.12, -0.08, 0.07, 0.04, 0.0, 0.0, -0.13 ]
+                }
+            ]
+        },
+        {
+            "type" : "Convolution",
+            "items" : [
+                { "type" : "Kolmogorov" , "fwhm" : 0.65 },
+                { "type" : "Airy" , "lam_over_diam" : 0.195 }
+            ]
+        }
+    ],
+
+    "index" : {
+        "type" : "Sequence",
+        "first" : 0,
+        "last" : 4,
+        "repeat" : 40 
+    }
+},
+
+"gal" : {
+    "type" : "List",
+    "items" : [
+        { "type" : "Gaussian" , "half_light_radius" : 1 },
+        { "type" : "Exponential" , "half_light_radius" : 1 },
+        { "type" : "DeVaucouleurs" , "half_light_radius" : 1 },
+        { "type" : "Sersic" , "n" : 2.5 , "half_light_radius" : 1 },
+        {
+            "type" : "Sum",
+            "items" : [
+                { "type" : "Sersic" , "n" : 3.2 , "half_light_radius" : 0.7 , "flux" : 0.4 ,
+                  "trunc" : 8.5 },
+                { "type" : "Sersic" , "n" : 1.5 , "half_light_radius" : 1.2 , "flux" : 0.6 }
+            ]
+        }
+    ],
+
+    "index" : {
+        "type" : "Sequence",
+        "repeat" : 8
+    },
+
+    "flux" : { "type" : "Random" , "min" : 1e4 , "max" : 1e5 },
+    "dilate" : { "type" : "Random" , "min" : 0.3 , "max" : 1.3 },
+    "ellip" : {
+        "type" : "EBeta",
+        "e" : { "type" : "Random" , "min" : 0.0 , "max" : 0.8 },
+        "beta" : { "type" : "Random" }
+    }
+},
+
+"image" : {
+    "type" : "Tiled",
+    "nx_tiles" : 2,
+    "ny_tiles" : 1,
+    "xborder" : 2,
+    "stamp_size" : 64,
+
+    "pixel_scale" : 0.28,
+
+    "draw_method" : {
+        "type" : "List",
+        "items" : [ "fft" , "phot" ]
+    },
+
+    "noise" : { "sky_level" : 1e4 },
+    "random_seed" : { "type" : "Sequence" , "first" : 553728 , "index_key" : "image_num" },
+
+    "gsparams" : {
+        "folding_threshold" : 1.0e-2,
+        "maxk_threshold" : 2.0e-3,
+        "xvalue_accuracy" : 1.0e-4,
+        "kvalue_accuracy" : 1.0e-4,
+        "shoot_accuracy" : 1.0e-4,
+        "minimum_fft_size" : 64
+    }
+},
+
+"output" : {
+    "type" : "DataCube",
+    "dir" : "output_json",
+    "file_name" : "cube_phot.fits.gz",
+    "nimages" : 100
+}
+
+}

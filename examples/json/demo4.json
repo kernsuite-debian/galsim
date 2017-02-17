@@ -1,0 +1,94 @@
+{
+"#" : "Demo #4",
+
+"#" : "The fourth JSON configuration file in our tutorial about using Galsim config files",
+"#" : "(This file is designed to be viewed in a window 100 characters wide.)",
+
+"#" : "This script is our first one to create multiple images.  Typically, you would want each",
+"#" : "object to have at least some of its attributes vary when you are drawing multiple images",
+"#" : "(although not necessarily -- you might just want different noise realization of the same",
+"#" : "profile).  The easiest way to do this is to read in the properties from a catalog, which is",
+"#" : "what we do in this script.  The PSF is a truncated Moffat profile, and the galaxy is bulge",
+"#" : "plus disk.  Both components get many of their parameters from an input catalog.  We also",
+"#" : "shift the profile by a fraction of a pixel in each direction so the effect of pixelization",
+"#" : "varies among the images.  Each galaxy has the same applied shear.  The noise is simple",
+"#" : "Poisson noise.  We write the images out into a multi-extension fits file.",
+
+"#" : "See demo4.yaml for more extensive commentary about the features here.",
+
+"psf" : {
+    "type" : "Moffat",
+    "beta" : 3.5,
+    "fwhm" : { "type" : "Catalog", "col" : 1 },
+    "trunc" : { "type" : "Catalog" , "col" : 4 },
+
+    "ellip" : {
+        "type" : "E1E2",
+        "e1" : { "type" : "Catalog", "col" : 2 }, 
+        "e2" : { "type" : "Catalog", "col" : 3 }
+    }
+},
+
+"gal" : {
+    "type" : "Sum",
+    "items" : [
+        { 
+            "type" : "Exponential",
+            "half_light_radius" : { "type" : "Catalog" , "col" : 5 },
+            "ellip" : {
+                "type" : "E1E2",
+                "e1" : { "type" : "Catalog" , "col" : 6 },
+                "e2" : { "type" : "Catalog" , "col" : 7 }
+            },
+            "flux" : 0.6
+        },
+        {
+            "type" : "DeVaucouleurs",
+            "half_light_radius" : { "type" : "Catalog" , "col" : 8 },
+            "ellip" : {
+                "type" : "E1E2",
+                "e1" : { "type" : "Catalog" , "col" : 9 },
+                "e2" : { "type" : "Catalog" , "col" : 10 }
+            },
+            "flux" : 0.4
+        }
+    ],
+
+    "flux" : 1e6,
+
+    "shear" : {
+        "type" : "G1G2",
+        "g1" : -0.009,
+        "g2" : 0.011
+    },
+
+    "shift" : {
+        "type" : "XY",
+        "x" : { "type" : "Catalog" , "col" : 11 },
+        "y" : { "type" : "Catalog" , "col" : 12 }
+    }
+},
+
+"image" : {
+    "pixel_scale" : 1.0,
+    "xsize" : 64,
+    "ysize" : 64,
+
+    "noise" : { "sky_level" : 1e6 },
+    "random_seed" : 8241573
+},
+
+"input" : {
+    "catalog" : {
+        "dir" : "input",
+        "file_name" : "galsim_default_input.asc"
+    }
+},
+
+"output" : {
+    "type" : "MultiFits",
+    "dir" : "output_json",
+    "file_name" : "multi.fits"
+}
+
+}

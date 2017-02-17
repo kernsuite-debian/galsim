@@ -1,0 +1,172 @@
+{
+"#" : "Demo #10",
+
+"#" : "The tenth JSON configuration file in our tutorial about using Galsim config files",
+"#" : "(This file is designed to be viewed in a window 100 characters wide.)",
+
+"#" : "This script uses both a variable PSF and variable shear, taken from a power spectrum, along",
+"#" : "the lines of a Great10 (Kitching, et al, 2012) image.  The galaxies are placed on a grid",
+"#" : "(10 x 10 in this case, rather than 100 x 100 in the interest of time.)  Each postage stamp",
+"#" : "is 48 x 48 pixels.  Instead of putting the PSF images on a separate image, we package them",
+"#" : "as the second HDU in the file.  For the galaxies, we use a random selection from 5 specific",
+"#" : "RealGalaxy objects, selected to be 5 particularly irregular ones.  (These are taken from",
+"#" : "the same catalog of 100 objects that demo6 used.)  The galaxies are oriented in a ring",
+"#" : "test (Nakajima & Bernstein 2007) of 20 each.  And we again output a truth catalog with the",
+"#" : "correct applied shear for each object (among other information).",
+
+"#" : "See demo10.yaml for more extensive commentary about the features here.",
+
+
+"psf" : {
+    "type" : "Gaussian",
+
+    "fwhm" : {
+        "type" : "Eval",
+        "str" : "0.9 + 0.5 * (world_pos.x**2 + world_pos.y**2) / 100**2"  
+    },
+
+    "ellip":{
+        "type" : "EBeta",
+        "e" : {
+            "type" : "Eval",
+            "fr" : { "type" : "Eval" , "str" : "(world_pos.x**2 + world_pos.y**2)**0.5" },
+            "str" : "0.4 * (r/100)**1.5"
+        },
+        "beta" : {
+            "type" : "Eval",
+            "str" : "(math.atan2(world_pos.y,world_pos.x) + math.pi/2.) * galsim.radians"
+        }
+    }
+},
+
+"stamp" : {
+    "type" : "Ring",
+    "num" : 20,
+
+    "full_rotation" : "360 deg",
+    "dilation" : 3,
+
+    "shear" : { "type" : "PowerSpectrumShear" },
+
+    "shift" : {
+        "type" : "RTheta",
+        "r" : {
+            "type" : "Eval",
+            "str" : "pixel_scale * 0.5",
+            "fpixel_scale" : { "type" : "Current", "key" : "image.pixel_scale" }
+        },
+        "theta" : { "type" : "Random" }
+    }
+},
+
+"gal" : {
+    "type" : "RealGalaxy",
+    "id" : {
+        "type" : "List",
+        "items" : [ 106416, 106731, 108402, 116045, 116448 ],
+        "index" : {
+            "type" : "Sequence",
+            "repeat" : { "type" : "Current", "key" : "stamp.num" }
+        }
+    },
+
+    "signal_to_noise" : 100
+},
+
+"image" : {
+    "nproc" : 5,
+
+    "type" : "Tiled",
+    "nx_tiles" : 10,
+    "ny_tiles" : 10,
+    "stamp_size" : 48,
+    "order" : "random",
+
+    "pixel_scale" : 0.44,
+    "wcs" : { "origin" : "center" },
+
+    "noise" : { "sky_level" : 1e6 },
+    "random_seed" : 3339201
+},
+
+"input" : {
+    "real_catalog" : { "dir" : "data", "file_name" : "real_galaxy_catalog_23.5_example.fits" },
+
+    "power_spectrum" : { "e_power_function" : "k**1.8" }
+},
+
+"output" : {
+
+    "dir" : "output_json",
+    "file_name" : "power_spectrum.fits",
+
+    "psf" :  {
+        "hdu" : 1,
+        "draw_method" : "real_space",
+        "signal_to_noise" : 1000,
+        "offset" : {
+            "type" : "XY",
+            "x" : { "type": "Random", "min": -0.5, "max": 0.5 },
+            "y" : { "type": "Random", "min": -0.5, "max": 0.5 }
+        }
+    },
+
+    "truth" : {
+        "hdu" : 2,
+        "columns" : {
+            "gal_num" : "obj_num",
+            "x_image" : { "type" : "Eval", "str" : "image_pos.x" },
+            "y_image" : { "type" : "Eval", "str" : "image_pos.y" },
+
+            "psf_e1" : {
+                "type" : "Eval",
+                "str" : "ellip.e1",
+                "gellip" : { "type" : "Current", "key" : "psf.ellip" }
+            },
+            "psf_e2" : {
+                "type" : "Eval",
+                "str" : "ellip.e2",
+                "gellip" : { "type" : "Current", "key" : "psf.ellip" }
+            },
+
+            "psf_fwhm" : "psf.fwhm",
+            "cosmos_id" : "gal.id",
+            "cosmos_index" : {
+                "type" : "Eval",
+                "str" : "orig_gal.index",
+                "xorig_gal" : { "type" : "Current", "key" : "gal" }
+            },
+
+            "theta" : {
+                "type" : "Eval",
+                "str" : "index * 360. / num",
+                "iindex" : { "type" : "Current", "key" : "stamp.index" },
+                "inum" : { "type" : "Current", "key" : "stamp.num" }
+            },
+
+            "g1" : {
+                "type" : "Eval",
+                "str" : "shear.g1",
+                "gshear" : { "type" : "Current", "key" : "stamp.shear" }
+            },
+            "g2" : {
+                "type" : "Eval",
+                "str" : "shear.g2",
+                "gshear" : { "type" : "Current", "key" : "stamp.shear" }
+            },
+
+            "shift_x" : {
+                "type" : "Eval",
+                "str" : "shift.x",
+                "pshift" : { "type" : "Current", "key" : "stamp.shift" }
+            },
+            "shift_y" : {
+                "type" : "Eval",
+                "str" : "shift.y",
+                "pshift" : { "type" : "Current", "key" : "stamp.shift" }
+            }
+        }
+    }
+}
+
+}

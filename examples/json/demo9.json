@@ -1,0 +1,169 @@
+{
+"#" : "Demo #9",
+
+"#" : "The ninth JSON configuration file in our tutorial about using Galsim config files",
+"#" : "(This file is designed to be viewed in a window 100 characters wide.)",
+
+"#" : "This script simulates cluster lensing or galaxy-galaxy lensing.  The gravitational shear ",
+"#" : "applied to each galaxy is calculated for an NFW halo mass profile.  We simulate observations ",
+"#" : "of galaxies around 20 different clusters -- 5 each of 4 different masses.  Each cluster",
+"#" : "has its own file, organized into 4 directories (one for each mass).  For each cluster, we",
+"#" : "draw 20 lensed galaxies located at random positions on the image.  The PSF is appropriate for a",
+"#" : "space-like simulation.  (Some of the numbers used are the values for HST.)  And we apply",
+"#" : "a cubic telescope distortion for the WCS.  Finally, we also output a truth catalog for each",
+"#" : "output image that could be used for testing the accuracy of shape or flux measurements.",
+
+"#" : "See demo9.yaml for more extensive commentary about the features here.",
+
+"psf" : {
+    "type" : "OpticalPSF",
+    "lam" : 900.0,
+    "diam" : 2.4,
+    "obscuration" : 0.125,
+    "nstruts" : 4,
+    "strut_thick" : 0.07,
+    "strut_angle" : "15 degrees",
+    "defocus" : 0.04,
+    "astig1" : 0.03,
+    "astig2" : -0.01,
+    "coma1" : 0.02,
+    "coma2" : 0.04,
+    "trefoil1" : -0.02,
+    "trefoil2" : 0.04
+},
+
+"gal" : {
+    "type" : "Exponential",
+    "half_light_radius" : { "type" : "Random" , "min" : 0.1 , "max" : 0.3 },
+
+    "flux" : {
+        "type" : "RandomDistribution",
+        "function" : "x**-1.5",
+        "x_min" : 1.0e4,
+        "x_max" : 1.0e6
+    },
+
+    "ellip" : {
+        "type" : "Eta1Eta2",
+        "eta1" : { "type" : "RandomGaussian" , "sigma" : 0.3 },
+        "eta2" : { "type" : "RandomGaussian" , "sigma" : 0.3 }
+    },
+
+    "magnification" : { "type" : "NFWHaloMagnification" },
+
+    "shear": {
+        "type" : "Sum",
+        "items" : [
+            { "type" : "NFWHaloShear" },
+            { "type" : "G1G2", "g1" : 0.03, "g2" : 0.01 }
+        ]
+    },
+
+    "redshift" : 0.6 
+},
+
+
+"input" : {
+    "nfw_halo" : {
+        "mass" : {
+            "type" : "List",
+            "items" : [ 7.0e14, 4.0e14, 2.0e14, 1.0e14 ],
+            "index" : { "type" : "Sequence", "repeat" : 5 }
+        },
+        "conc" : 4, 
+        "redshift" : 0.3,
+        "omega_m" : 0.3,
+        "omega_lam" : 0.7
+    }
+},
+
+"image" : {
+    "type" : "Scattered",
+    "size" : 512,
+    "nobjects" : {
+        "type" : "Random",
+        "min" : 15,
+        "max" : 30
+    },
+
+    "world_pos" : {
+        "type" : "RandomCircle",
+        "radius" : 12,
+        "inner_radius" : 3
+    },
+
+    "wcs" : {
+        "type" : "UVFunction",
+        "ufunc" : "0.05 * x * (1. + 2.e-6 * (x**2 + y**2))",
+        "vfunc" : "0.05 * y * (1. + 2.e-6 * (x**2 + y**2))",
+
+        "xfunc" : "( lambda w: ( 0 if w==0 else 100.*u/w*(( 5*(w**2 + 5.e3/27.)**0.5 + 5*w )**(1./3.) - ( 5*(w**2 + 5.e3/27.)**0.5 - 5*w )**(1./3.))))( (u**2+v**2)**0.5 )",
+        "yfunc" : "( lambda w: ( 0 if w==0 else 100.*v/w*(( 5*(w**2 + 5.e3/27.)**0.5 + 5*w )**(1./3.) - ( 5*(w**2 + 5.e3/27.)**0.5 - 5*w )**(1./3.))))( (u**2+v**2)**0.5 )",
+
+        "origin" : "center"
+    },
+
+    "noise" : { "sky_level" : 1.0e2 },
+    "random_seed" : 8383721
+},
+
+"output" : {
+    "nfiles" : 20,
+    "file_name" : {
+        "type" : "NumberedFile",
+        "root" : "cluster",
+        "num" : { "type" : "Sequence", "first" : 0, "nitems" : 5 },
+        "digits" : 4
+    },
+
+
+    "dir" : {
+        "type" : "FormattedStr",
+        "format" : "output_json/nfw%d",
+        "items" : [
+            { "type" : "Sequence", "first" : 1, "last" : 4, "repeat" : 5 }
+        ]
+    },
+
+    "weight" : { "hdu" : 2 },
+    "badpix" : { "hdu" : 1 },
+    "psf" : { "hdu" : 3 },
+
+    "nproc" : -1,
+
+    "truth" : {
+        "file_name" : {
+            "type" : "NumberedFile",
+            "root" : "truth",
+            "num" : {
+                "type" : "Sequence",
+                "first" : 0,
+                "nitems" : 5
+            },
+            "digits" : 4,
+            "ext" : ".dat"
+        },
+
+        "columns" : {
+            "object_id" : "obj_num",
+            "halo_id" : "file_num",
+
+            "flux" : "gal.flux",
+            "size" : "gal.half_light_radius",
+            "eta1" : "gal.ellip.eta1",
+            "eta2" : "gal.ellip.eta2",
+            "mu" : "gal.magnification",
+            "redshift" : "gal.redshift",
+
+            "shear" : "gal.shear",
+            "pos" : "image.world_pos",
+            "image_pos" : "image_pos",
+
+            "halo_mass" : "input.nfw_halo.mass",
+            "halo_conc" : "input.nfw_halo.conc",
+            "halo_redshift" : "input.nfw_halo.redshift"
+        }
+    }
+}
+
+}

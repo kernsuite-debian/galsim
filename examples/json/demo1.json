@@ -1,0 +1,59 @@
+{
+"#" : "Demo #1",
+
+"#" : "The first JSON configuration file in our tutorial about using Galsim config files",
+"#" : "(This file is designed to be viewed in a window 100 characters wide.)",
+
+"#" : "Each of these demo*.json files are designed to be equivalent to the corresponding",
+"#" : "../demo*.py file.  We expect that the config file usage will be easier for many people",
+"#" : "to get going with GalSim, especially those who aren't very comfortable with writing ",
+"#" : "python code.  And even advanced pythonistas may find it more useful for many tasks than",
+"#" : "writing the corresponding python code.",
+
+"#" : "The executable that reads these JSON files is called galsim, which should be installed",
+"#" : "in your PREFIX/bin directory (after doing `scons install`, that is, where PREFIX is either",
+"#" : "/usr/local or whatever other PREFIX you set when running scons).  So to run this config",
+"#" : "file, you should be able to type simply (from the examples directory):",
+
+"#" : "    galsim json/demo1.json",
+
+"#" : "If you haven't run `scons install` for whatever reason, you can instead write:",
+
+"#" : "    ../bin/galsim json/demo1.json",
+
+"#" : "See https://github.com/GalSim-developers/GalSim/wiki/Config-Documentation for ",
+"#" : "more complete documentation about how to use the GalSim configuration machinery.",
+
+
+"#" : "This first config file is about as simple as it gets.  We draw an image of a single galaxy ",
+"#" : "convolved with a PSF and write it to disk.  We use a circular Gaussian profile for both the",
+"#" : "PSF and the # galaxy, and add a constant level of Gaussian noise to the image.",
+
+"#" : "In each demo, we list the new features introduced in that demo file.  These will differ",
+"#" : "between the .py and .json files, since the two methods implement things different ways.",
+"#" : "(demo*.py are python scripts, while demo*.json are configuration files.)",
+
+"#" : "See demo1.yaml for more extensive commentary about the features here.",
+
+"gal" : {
+    "type" : "Gaussian",
+    "sigma" : 2,
+    "flux" : 1e5
+},
+ 
+"psf" : {
+    "type" : "Gaussian",
+    "sigma" : 1
+},
+
+"image" : {
+    "pixel_scale" : 0.2,
+    "noise" : { "type" : "Gaussian", "sigma" : 30 }
+},
+
+"output" : {
+    "dir" : "output_json",
+    "file_name" : "demo1.fits"
+}
+    
+}

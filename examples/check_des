@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# https://github.com/GalSim-developers
+#
+# This file is part of GalSim: The modular galaxy image simulation toolkit.
+# https://github.com/GalSim-developers/GalSim
+#
+# GalSim is free software: redistribution and use in source and binary forms,
+# with or without modification, are permitted provided that the following
+# conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions, and the disclaimer given in the accompanying LICENSE
+#    file.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions, and the disclaimer given in the documentation
+#    and/or other materials provided with the distribution.
+#
+
+cd des
+
+python=../../bin/installed_python  # For python scripts
+bin=../../bin  # For galsim executable
+
+if [ ! -d "output" ]; then
+    mkdir output
+fi
+if [ ! -d "output_yaml" ]; then
+    mkdir output_yaml
+fi
+
+/bin/rm -rf output/DECam*
+/bin/rm -rf output_yaml/DECam*
+
+nfiles=1
+time $python draw_psf.py last=$nfiles || exit
+time $bin/galsim draw_psf.yaml output.nfiles=$nfiles || exit
+
+# These don't have any check, but at least make sure they run to completion.
+time $bin/galsim blend.yaml || exit
+time $bin/galsim blendset.yaml || exit
+
+# Using the real galaxies takes a long time, dominated by the pyfits I/O (which preload does
+# not help with).  So use parametric for this test.
+time $bin/galsim meds.yaml output.nfiles=$nfiles output.nobjects=1000 gal.items.0.gal_type=parametric || exit
+
+
+echo 'Checking diffs:'
+
+for chip_num in {1..$nfiles} 
+do
+    root=DECam_00154912_01
+    file_name=${root}_psfex_image.fits
+    ../check_diff output/$file_name output_yaml/$file_name
+    file_name=${root}_fitpsf_image.fits
+    ../check_diff output/$file_name output_yaml/$file_name
+done
+
