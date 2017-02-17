@@ -3,6 +3,21 @@
 
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
+SCONS=scons
+DEB_DESTDIR=$(PWD)/debian/tmp
+PYPREFIX=$(DEB_DESTDIR)/usr/lib/python2.7/dist-packages
 
 %:
-	dh $@ 
+	dh $@
+
+override_dh_clean:
+	dh_clean
+	$(SCONS) -c
+	rm -rf .sconf_temp .sconsign.dblite gs_scons.conf config.log gs.error
+	rm -rf galsim/_version.pyc galsim/meta_data.py include/galsim/Version.h
+
+override_dh_auto_configure:
+	$(SCONS) PREFIX=$(DEB_DESTDIR)/usr TMV_LINK=/usr/share/tmv/tmv-link PYPREFIX=$(PYPREFIX)
+
+override_dh_auto_install:
+	$(SCONS) install PREFIX=$(DEB_DESTDIR)/usr PYPREFIX=$(PYPREFIX)

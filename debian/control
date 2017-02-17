@@ -1,15 +1,30 @@
 Source: galsim
-Section: unknown
+Section: science
 Priority: optional
 Maintainer: Gijs Molenaar (launchpad ppa build key) <gijs@pythonic.nl>
-Build-Depends: debhelper (>= 8.0.0)
-Standards-Version: 3.9.4
-Homepage: <insert the upstream URL, if relevant>
-#Vcs-Git: git://git.debian.org/collab-maint/galsim.git
-#Vcs-Browser: http://git.debian.org/?p=collab-maint/galsim.git;a=summary
+Build-Depends: debhelper (>= 8.0.0), scons, libfftw3-dev, libboost-dev, tmv-dev, libpython-dev, python-numpy,
+ python-astropy, python-future, python-yaml, libboost-python-dev, python-pandas, dh-python, python-all
+Standards-Version: 3.9.5
+Homepage: https://github.com/GalSim-developers/GalSim
+X-Python-Version: >= 2.7
+
+Package: galsim-dev
+Section: libdevel
+Architecture: any
+Depends: galsim0 (= ${binary:Version})
+Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
+
+Package: galsim0
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, python-galsim
+Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
+
+Package: python-galsim
+Architecture: any
+Depends: ${python:Depends}, ${misc:Depends}
+Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
 
 Package: galsim
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: <insert up to 60 chars description>
- <insert long description, indented with spaces>
+Depends: ${python:Depends}, ${shlibs:Depends}, ${misc:Depends}, python-galsim, galsim0
+Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
