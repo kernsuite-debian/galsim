@@ -1,0 +1,11 @@
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: galsim
+Source: https://github.com/GalSim-developers/GalSim
+
+Files: *
+Copyright: 2012-2016 by the GalSim developers team on GitHub
+License: BSD-3-Clause
+
+Files: debian/*
+Copyright: 2017 Gijs Molenaar <gijs@pythonic.nl>
+License: MIT
