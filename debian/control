@@ -21,7 +21,7 @@ Description: simulating images of astronomical objects (stars, galaxies) in a va
 
 Package: python-galsim
 Architecture: any
-Depends: ${python:Depends}, ${misc:Depends}
+Depends: ${python:Depends}, ${misc:Depends}, ${shlibs:Depends}
 Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
 
 Package: galsim

@@ -3,3 +3,11 @@ galsim/_version.pyc
 pysrc/.obj/
 src/.obj/
 src/hsm/.obj/
+.sconf_temp/
+.sconsign.dblite
+gs_scons.conf
+config.log
+gs.error
+galsim/_version.pyc
+galsim/meta_data.py
+include/galsim/Version.h

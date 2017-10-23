@@ -1,3 +1,10 @@
+galsim (1.4.4-1kern1) xenial; urgency=medium
+
+  * New upstream release
+  * Add missing boost library dependency
+
+ -- KERN packaging <packaging@kernsuite.info>  Mon, 23 Oct 2017 18:01:23 +0200
+
 galsim (1.4.3-1) xenial; urgency=low
 
   * Initial release
