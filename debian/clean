@@ -1,0 +1,5 @@
+galsim/_galsim.so
+galsim/_version.pyc
+pysrc/.obj/
+src/.obj/
+src/hsm/.obj/
