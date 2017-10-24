@@ -2,29 +2,67 @@ Source: galsim
 Section: science
 Priority: optional
 Maintainer: Gijs Molenaar (launchpad ppa build key) <gijs@pythonic.nl>
-Build-Depends: debhelper (>= 8.0.0), scons, libfftw3-dev, libboost-dev, tmv-dev, libpython-dev, python-numpy,
- python-astropy, python-future, python-yaml, libboost-python-dev, python-pandas, dh-python, python-all
-Standards-Version: 3.9.5
+Build-Depends:
+ debhelper (>= 9.0.0),
+ scons,
+ libfftw3-dev,
+ libboost-dev,
+ tmv-dev,
+ libpython-dev,
+ python-numpy,
+ python-astropy,
+ python-future,
+ python-yaml,
+ libboost-python-dev,
+ python-pandas,
+ dh-python,
+ python-all
+Standards-Version: 3.9.7
 Homepage: https://github.com/GalSim-developers/GalSim
 X-Python-Version: >= 2.7
 
 Package: galsim-dev
 Section: libdevel
 Architecture: any
-Depends: galsim0 (= ${binary:Version})
-Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
+Depends: libgalsim1.4 (= ${binary:Version}), ${misc:Depends}, ${python:Depends} 
+Description: simulating images of astronomical objects
+ GalSim is open-source software for simulating images of astronomical objects
+ (stars, galaxies) in a variety of ways. The bulk of the calculations are
+ carried out in C++, and the user interface is in python. In addition, the
+ code can operate directly on "config" files, for those users who prefer not
+ to work in python
 
-Package: galsim0
+Package: libgalsim1.4
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, python-galsim
-Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Replaces: galsim0
+Description: simulating images of astronomical objects
+ GalSim is open-source software for simulating images of astronomical objects
+ (stars, galaxies) in a variety of ways. The bulk of the calculations are
+ carried out in C++, and the user interface is in python. In addition, the
+ code can operate directly on "config" files, for those users who prefer not
+ to work in python.
 
 Package: python-galsim
 Architecture: any
+Section: python
 Depends: ${python:Depends}, ${misc:Depends}, ${shlibs:Depends}
-Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
+Description: simulating images of astronomical objects
+ GalSim is open-source software for simulating images of astronomical objects
+ (stars, galaxies) in a variety of ways. The bulk of the calculations are
+ carried out in C++, and the user interface is in python. In addition, the
+ code can operate directly on "config" files, for those users who prefer not
+ to work in python.
 
 Package: galsim
 Architecture: any
-Depends: ${python:Depends}, ${shlibs:Depends}, ${misc:Depends}, python-galsim, galsim0
-Description: simulating images of astronomical objects (stars, galaxies) in a variety of ways
+Depends: ${python:Depends}, ${shlibs:Depends}, ${misc:Depends}, python-galsim,
+ libgalsim1.4 (= ${binary:Version})
+Description: simulating images of astronomical object
+ GalSim is open-source software for simulating images of astronomical objects
+ (stars, galaxies) in a variety of ways. The bulk of the calculations are
+ carried out in C++, and the user interface is in python. In addition, the
+ code can operate directly on "config" files, for those users who prefer not
+ to work in python.
+
+

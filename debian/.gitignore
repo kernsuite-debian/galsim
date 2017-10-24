@@ -3,7 +3,7 @@ debhelper-build-stamp
 files
 *.debhelper.log
 *.substvars
-galsim/
-galsim0/
+*.debhelper
+libgalsim1.4/
 galsim-dev/
 python-galsim/

@@ -1,3 +1,9 @@
+galsim (1.4.4-1kern2) xenial; urgency=medium
+
+  * fix lintian errors
+
+ -- KERN packaging <packaging@kernsuite.info>  Mon, 23 Oct 2017 18:15:49 +0200
+
 galsim (1.4.4-1kern1) xenial; urgency=medium
 
   * New upstream release
