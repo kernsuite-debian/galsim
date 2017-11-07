@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -29,10 +29,10 @@ namespace bp = boost::python;
 
 namespace galsim {
 
-    struct PySBDeconvolve 
+    struct PySBDeconvolve
     {
 
-        static void wrap() 
+        static void wrap()
         {
             bp::class_< SBDeconvolve, bp::bases<SBProfile> >("SBDeconvolve", bp::no_init)
                 .def(bp::init<const SBProfile &,boost::shared_ptr<GSParams> >(
@@ -40,12 +40,13 @@ namespace galsim {
                          bp::arg("gsparams")=bp::object())
                 ))
                 .def(bp::init<const SBDeconvolve &>())
+                .def("getObj", &SBDeconvolve::getObj)
                 ;
         }
 
     };
 
-    void pyExportSBDeconvolve() 
+    void pyExportSBDeconvolve()
     {
         PySBDeconvolve::wrap();
     }

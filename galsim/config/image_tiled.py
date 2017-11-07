@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -40,8 +40,7 @@ class TiledImageBuilder(ImageBuilder):
 
         @returns xsize, ysize
         """
-        if logger:
-            logger.debug('image %d: Building Tiled: image, obj = %d,%d',image_num,image_num,obj_num)
+        logger.debug('image %d: Building Tiled: image, obj = %d,%d',image_num,image_num,obj_num)
 
         extra_ignore = [ 'image_pos' ] # We create this below, so on subequent passes, we ignore it.
         req = { 'nx_tiles' : int , 'ny_tiles' : int }
@@ -52,8 +51,7 @@ class TiledImageBuilder(ImageBuilder):
 
         self.nx_tiles = params['nx_tiles']  # We'll need this again later, so save them in self.
         self.ny_tiles = params['ny_tiles']
-        if logger:
-            logger.debug('image %d: n_tiles = %d, %d',image_num,self.nx_tiles,self.ny_tiles)
+        logger.debug('image %d: n_tiles = %d, %d',image_num,self.nx_tiles,self.ny_tiles)
 
         stamp_size = params.get('stamp_size',0)
         self.stamp_xsize = params.get('stamp_xsize',stamp_size)
@@ -114,6 +112,7 @@ class TiledImageBuilder(ImageBuilder):
         full_image.setOrigin(base['image_origin'])
         full_image.wcs = wcs
         full_image.setZero()
+        base['current_image'] = full_image
 
         nobjects = self.nx_tiles * self.ny_tiles
 
@@ -131,7 +130,7 @@ class TiledImageBuilder(ImageBuilder):
         elif order.startswith('rand'):
             ix_list = [ ix for ix in range(self.nx_tiles) for iy in range(self.ny_tiles) ]
             iy_list = [ iy for ix in range(self.nx_tiles) for iy in range(self.ny_tiles) ]
-            rng = base['rng']
+            rng = galsim.config.GetRNG(config, base, logger, 'TiledImage, order = '+order)
             galsim.random.permute(rng, ix_list, iy_list)
         else:
             raise ValueError("Invalid order.  Must be row, column, or random")
@@ -143,7 +142,7 @@ class TiledImageBuilder(ImageBuilder):
         dx = self.stamp_xsize + self.xborder
         dy = self.stamp_ysize + self.yborder
         config['image_pos'] = {
-            'type' : 'XY' ,
+            'type' : 'XY',
             'x' : { 'type' : 'List',
                     'items' : [ x0 + ix*dx for ix in ix_list ]
                   },
@@ -159,11 +158,8 @@ class TiledImageBuilder(ImageBuilder):
         base['index_key'] = 'image_num'
 
         for k in range(nobjects):
-            # This is our signal that the object was skipped.
-            if stamps[k] is None: continue
-            if logger:
-                logger.debug('image %d: full bounds = %s',image_num,str(full_image.bounds))
-                logger.debug('image %d: stamp %d bounds = %s',image_num,k,str(stamps[k].bounds))
+            logger.debug('image %d: full bounds = %s',image_num,str(full_image.bounds))
+            logger.debug('image %d: stamp %d bounds = %s',image_num,k,str(stamps[k].bounds))
             assert full_image.bounds.includes(stamps[k].bounds)
             b = stamps[k].bounds
             full_image[b] += stamps[k]
@@ -205,7 +201,8 @@ class TiledImageBuilder(ImageBuilder):
         # If didn't do noise above in the stamps, then need to do it here.
         if not self.do_noise_in_stamps:
             # Apply the sky and noise to the full image
-            galsim.config.AddSky(config,image)
+            base['current_noise_image'] = base['current_image']
+            galsim.config.AddSky(base,image)
             galsim.config.AddNoise(base,image,current_var,logger)
 
     def getNObj(self, config, base, image_num):
@@ -217,6 +214,7 @@ class TiledImageBuilder(ImageBuilder):
 
         @returns the number of objects
         """
+        orig_index_key = base.get('index_key',None)
         base['index_key'] = 'image_num'
         base['image_num'] = image_num
 
@@ -225,6 +223,7 @@ class TiledImageBuilder(ImageBuilder):
                 "Attributes nx_tiles and ny_tiles are required for image.type = Tiled")
         nx = galsim.config.ParseValue(config,'nx_tiles',base,int)[0]
         ny = galsim.config.ParseValue(config,'ny_tiles',base,int)[0]
+        base['index_key'] = orig_index_key
         return nx*ny
 
 # Register this as a valid image type

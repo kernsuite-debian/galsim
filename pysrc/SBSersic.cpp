@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -75,52 +75,9 @@ namespace galsim {
         }
     };
 
-    struct PySBDeVaucouleurs
-    {
-
-        static SBDeVaucouleurs* construct(
-            const bp::object & scale_radius, const bp::object & half_light_radius,
-            double flux, double trunc, bool flux_untruncated,
-            boost::shared_ptr<GSParams> gsparams)
-        {
-            double s = 1.0;
-            checkRadii(half_light_radius, scale_radius, bp::object());
-            SBSersic::RadiusType rType = SBSersic::HALF_LIGHT_RADIUS;
-            if (half_light_radius.ptr() != Py_None) {
-                s = bp::extract<double>(half_light_radius);
-            }
-            if (scale_radius.ptr() != Py_None) {
-                s = bp::extract<double>(scale_radius);
-                rType = SBSersic::SCALE_RADIUS;
-            }
-            return new SBDeVaucouleurs(s, rType, flux, trunc, flux_untruncated, gsparams);
-        }
-
-        static void wrap()
-        {
-            bp::class_<SBDeVaucouleurs,bp::bases<SBSersic> >("SBDeVaucouleurs",bp::no_init)
-                .def("__init__",
-                     bp::make_constructor(
-                         &construct, bp::default_call_policies(),
-                         (bp::arg("scale_radius")=bp::object(),
-                          bp::arg("half_light_radius")=bp::object(),
-                          bp::arg("flux")=1.,
-                          bp::arg("trunc")=0., bp::arg("flux_untruncated")=false,
-                          bp::arg("gsparams")=bp::object())
-                     )
-                )
-                .def(bp::init<const SBDeVaucouleurs &>())
-                .def("getHalfLightRadius", &SBDeVaucouleurs::getHalfLightRadius)
-                .def("getScaleRadius", &SBDeVaucouleurs::getScaleRadius)
-                .def("getTrunc", &SBDeVaucouleurs::getTrunc)
-                ;
-        }
-    };
-
     void pyExportSBSersic()
     {
         PySBSersic::wrap();
-        PySBDeVaucouleurs::wrap();
     }
 
 } // namespace galsim

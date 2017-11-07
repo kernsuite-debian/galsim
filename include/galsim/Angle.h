@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -21,15 +21,15 @@
 #define GalSim_Angle_H
 
 /**
- *  @file Angle.h 
+ *  @file Angle.h
  *
  *  @brief Defines Angle class for dealing cleanly with angle values and a unit.
  *
- *  Based on the LSST Angle class from 
+ *  Based on the LSST Angle class from
  *  http://dev.lsstcorp.org/cgit/LSST/DMS/afw.git/tree/include/lsst/afw/geom/Angle.h
  *
  *  Modified significantly by MJ:
- *  - Remove implicit conversion to/from double (which seems to me to negate much 
+ *  - Remove implicit conversion to/from double (which seems to me to negate much
  *    of the point of having an Angle class).
  *  - Include scalar = Angle / AngleUnit
  *  - Removed non-sensical Angle = Angle * Angle
@@ -55,7 +55,7 @@ namespace galsim {
     /**
      *  @brief A class defining angle units
      *
-     *  You probably won't ever have to use this directly. 
+     *  You probably won't ever have to use this directly.
      *  Instead you will you the pre-defined constants that are AngleUnits:
      *    radians
      *    degrees
@@ -63,7 +63,7 @@ namespace galsim {
      *    arcmin
      *    arcsec
      */
-    class AngleUnit 
+    class AngleUnit
     {
         friend class Angle;
     public:
@@ -79,7 +79,7 @@ namespace galsim {
         bool operator==(AngleUnit rhs) const { return (_val == rhs._val); }
         bool operator!=(AngleUnit rhs) const { return (_val != rhs._val); }
         //@}
-        
+
         double getValue() const { return _val; }
 
     private:
@@ -91,6 +91,9 @@ namespace galsim {
     const AngleUnit hours(M_PI*15./180.); ///< constant with units of hours
     const AngleUnit arcmin(M_PI/60./180.); ///< constant with units of arcminutes
     const AngleUnit arcsec(M_PI/3600./180.); ///< constant with units of arcseconds
+
+    // Defined below after we define the Angle class
+    inline Angle operator*(double val, AngleUnit unit);
 
     /**
      *  @brief A class representing an Angle
@@ -165,7 +168,7 @@ namespace galsim {
         friend Angle operator*(double scale, Angle theta) { return theta * scale; }
         Angle operator/(double scale) const { Angle theta = *this; theta /= scale; return theta; }
         //@}
-        
+
         //@{
         /// Define arithmetic for adding/subtracting two Angles
         Angle& operator+=(Angle rhs) { _val += rhs._val; return *this; }
@@ -173,7 +176,7 @@ namespace galsim {
         Angle operator+(Angle rhs) const { Angle theta = *this; theta += rhs; return theta; }
         Angle operator-(Angle rhs) const { Angle theta = *this; theta -= rhs; return theta; }
         //@}
- 
+
         //@{
         /// Define comparisons of two Angles
         bool operator==(Angle rhs) const { return _val == rhs._val; }
@@ -183,18 +186,19 @@ namespace galsim {
         bool operator>=(Angle rhs) const { return _val >= rhs._val; }
         bool operator>(Angle rhs) const { return _val > rhs._val; }
         //@}
-        
+
         /// Output operator for an Angle
         friend std::ostream& operator<<(std::ostream& os, Angle theta)
         { os << theta._val; return os; }
 
-        /// Wraps this angle to the range (-pi, pi]
-        Angle wrap() {
+        /// Wraps this angle to the range (c-pi, c+pi]
+        Angle wrap(Angle center=0.*radians)
+        {
             const double TWOPI = 2.*M_PI;
-            double new_val = std::fmod(_val, TWOPI); // now in range (-TWOPI, TWOPI)
+            double new_val = std::fmod(_val-center.rad(), TWOPI); // now in range (-TWOPI, TWOPI)
             if (new_val <= -M_PI) new_val += TWOPI;
             if (new_val > M_PI) new_val -= TWOPI;
-            return Angle(new_val, radians);
+            return Angle(new_val+center.rad(), radians);
         }
 
         double sin() const { return std::sin(_val); }
@@ -218,7 +222,7 @@ namespace galsim {
     inline Angle operator*(double val, AngleUnit unit) { return Angle(val,unit); }
 
     /// A convenience function.  unit1/unit2 is equivalent to (1 * unit1) / unit2.
-    inline double operator/(AngleUnit unit1, AngleUnit unit2) 
+    inline double operator/(AngleUnit unit1, AngleUnit unit2)
     { return unit1.getValue() / unit2.getValue(); }
 
 }

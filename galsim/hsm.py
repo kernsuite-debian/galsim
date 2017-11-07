@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -325,15 +325,18 @@ def _convertMask(image, weight=None, badpix=None):
     return mask.image.view()
 
 
-# A simpler helper function to make sure the images are not ImageS.  Convert to ImageI if they are.
+# A simpler helper function to force images to be of type ImageF or ImageD
 def _convertImage(image):
     """Convert the given image to the correct format needed to pass to the C++ layer.
 
     This is used by EstimateShear() and FindAdaptiveMom().
     """
-    # if weight is an ImageS, then convert to ImageI.
-    if image.dtype == np.int16:
-        image = galsim.ImageI(image)
+    # if weight is not of type float/double, convert to float/double
+    if (image.dtype == np.int16 or image.dtype == np.uint16):
+        image = galsim.ImageF(image)
+
+    if (image.dtype == np.int32 or image.dtype == np.uint32):
+        image = galsim.ImageD(image)
 
     # Return this as an ImageView
     return image.image.view()

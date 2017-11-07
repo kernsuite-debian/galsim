@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -29,18 +29,18 @@ namespace bp = boost::python;
 namespace galsim {
 namespace bessel {
 
-    // The boost versions are templated.  Make them concrete here so they are 
+    // The boost versions are templated.  Make them concrete here so they are
     // easier to wrap.
-    inline double BesselJv(double v, double x) 
+    inline double BesselJv(double v, double x)
     { return boost::math::cyl_bessel_j(v,x); }
 
-    inline double BesselJn(int n, double x) 
+    inline double BesselJn(int n, double x)
     { return boost::math::cyl_bessel_j(n,x); }
 
-    inline double BesselKv(double v, double x) 
+    inline double BesselKv(double v, double x)
     { return boost::math::cyl_bessel_k(v,x); }
 
-    inline double BesselKn(int n, double x) 
+    inline double BesselKn(int n, double x)
     { return boost::math::cyl_bessel_k(n,x); }
 
     void pyExportBessel() {

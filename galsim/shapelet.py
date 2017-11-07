@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -190,7 +190,6 @@ class Shapelet(GSObject):
 _galsim.SBShapelet.__getinitargs__ = lambda self: (
         self.getSigma(), self.getBVec(), self.getGSParams())
 _galsim.SBShapelet.__getstate__ = lambda self: None
-_galsim.SBShapelet.__setstate__ = lambda self, state: 1
 _galsim.SBShapelet.__repr__ = lambda self: 'galsim._galsim.SBShapelet(%r, %r, %r)'%(
         self.getSigma(), self.getBVec(), self.getGSParams())
 _galsim.LVector.__getinitargs__ = lambda self: (self.order, self.array)

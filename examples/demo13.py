@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -43,6 +43,7 @@ impact of each detector effect separately) they take up a bit over 2G.
 
 New features introduced in this demo:
 - image.quantize()
+- obj = galsim.DeltaFunction(flux)
 - Routines to include WFIRST-specific detector effects:
   - galsim.wfirst.addReciprocityFailure(image)
   - galsim.wfirst.applyNonlinearity(image)
@@ -73,6 +74,29 @@ def main(argv):
     path, filename = os.path.split(__file__)
     datapath = os.path.abspath(os.path.join(path, "data/"))
     outpath = os.path.abspath(os.path.join(path, "output/"))
+
+    # Just use a few galaxies, to save time.  Note that we are going to put 4000 galaxy images into
+    # our big image, so if we have n_use=10, each galaxy will appear 400 times.  Users who want a
+    # more interesting image with greater variation in the galaxy population can change `n_use` to
+    # something larger (but it should be <=100, the number of galaxies in this small example
+    # catalog).  With 4000 galaxies in a 4k x 4k image with the WFIRST pixel scale, the effective
+    # galaxy number density is 74/arcmin^2.  This is not the number density that is expected for a
+    # sample that is so bright (I<23.5) but it makes the image more visually interesting.  One could
+    # think of it as what you'd get if you added up several images at once, making the images for a
+    # sample that is much deeper have the same S/N as that for an I<23.5 sample in a single image.
+    n_use = 10
+    n_tot = 4000
+
+    # Default is to use all filters.  Specify e.g. 'YJH' to only do Y106, J129, and H158.
+    use_filters = None
+
+    # quick and dirty command line parsing.
+    for var in argv:
+        if var.startswith('data='): datapath = var[5:]
+        if var.startswith('out='): outpath = var[4:]
+        if var.startswith('nuse='): n_use = int(var[5:])
+        if var.startswith('ntot='): n_tot = int(var[5:])
+        if var.startswith('filters='): use_filters = var[8:].upper()
 
     # Make output directory if not already present.
     if not os.path.isdir(outpath):
@@ -105,17 +129,6 @@ def main(argv):
     # want parametric galaxies that represent an I<23.5 sample.
     cat = galsim.COSMOSCatalog(cat_file_name, dir=dir, use_real=False)
     logger.info('Read in %d galaxies from catalog'%cat.nobjects)
-    # Just use a few galaxies, to save time.  Note that we are going to put 4000 galaxy images into
-    # our big image, so if we have n_use=10, each galaxy will appear 400 times.  Users who want a
-    # more interesting image with greater variation in the galaxy population can change `n_use` to
-    # something larger (but it should be <=100, the number of galaxies in this small example
-    # catalog).  With 4000 galaxies in a 4k x 4k image with the WFIRST pixel scale, the effective
-    # galaxy number density is 74/arcmin^2.  This is not the number density that is expected for a
-    # sample that is so bright (I<23.5) but it makes the image more visually interesting.  One could
-    # think of it as what you'd get if you added up several images at once, making the images for a
-    # sample that is much deeper have the same S/N as that for an I<23.5 sample in a single image.
-    n_use = 10
-    n_tot = 4000
 
     # Here we carry out the initial steps that are necessary to get a fully chromatic PSF.  We use
     # the getPSF() routine in the WFIRST module, which knows all about the telescope parameters
@@ -221,6 +234,10 @@ def main(argv):
     # Calculate the sky level for each filter, and draw the PSF and the galaxies through the
     # filters.
     for filter_name, filter_ in filters.items():
+        if use_filters is not None and filter_name[0] not in use_filters:
+            logger.info('Skipping filter {0}.'.format(filter_name))
+            continue
+
         logger.info('Beginning work for {0}.'.format(filter_name))
 
         # Drawing PSF.  Note that the PSF object intrinsically has a flat SED, so if we convolve it
@@ -232,8 +249,8 @@ def main(argv):
         # a real image, one would have to choose SEDs for stars and convolve with a star that has a
         # reasonable SED, but we just draw with a flat SED for this demo.
         out_filename = os.path.join(outpath, 'demo13_PSF_{0}.fits'.format(filter_name))
-        # Approximate a point source.
-        point = galsim.Gaussian(sigma=1.e-8, flux=1.)
+        # Generate a point source.
+        point = galsim.DeltaFunction(flux=1.)
         # Use a flat SED here, but could use something else.  A stellar SED for instance.
         # Or a typical galaxy SED.  Depending on your purpose for drawing the PSF.
         star_sed = galsim.SED(lambda x:1, 'nm', 'flambda').withFlux(1.,filter_)  # Give it unit flux in this filter.

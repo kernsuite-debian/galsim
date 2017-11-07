@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -59,7 +59,7 @@ def test_corr_padding_cf():
     for iter in range(n_iter):
         # make it into an InterpolatedImage padded with cf
         int_im = galsim.InterpolatedImage(orig_img, noise_pad=cf)
-        
+
         # do it again with a particular seed
         int_im = galsim.InterpolatedImage(orig_img, rng = galsim.GaussianDeviate(orig_seed),
                                           noise_pad = cf)

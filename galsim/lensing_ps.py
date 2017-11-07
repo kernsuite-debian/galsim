@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -122,7 +122,7 @@ class PowerSpectrum(object):
     user-defined functions that take a single argument `k` and return the power at that `k` value,
     or they can be instances of the LookupTable class for power spectra that are known at
     particular `k` values but for which there is not a simple analytic form.
-    
+
     Cosmologists often express the power spectra in terms of an expansion in spherical harmonics
     (ell), i.e., the C_ell values.  In the flat-sky limit, we can replace ell with k and C_ell with
     P(k).  Thus, k and P(k) have dimensions of inverse angle and angle^2, respectively.  It is quite
@@ -168,7 +168,7 @@ class PowerSpectrum(object):
     @param delta2           Is the power actually given as dimensionless Delta^2, which requires us
                             to multiply by 2pi / k^2 to get the shear power P(k) in units of
                             angle^2?  [default: False]
-    @param units            The angular units used for the power spectrum (i.e. the units of 
+    @param units            The angular units used for the power spectrum (i.e. the units of
                             k^-1 and sqrt(P)). This should be either an AngleUnit instance
                             (e.g. galsim.radians) or a string (e.g. 'radians'). [default: arcsec]
     """
@@ -240,7 +240,7 @@ class PowerSpectrum(object):
 
     def buildGrid(self, grid_spacing=None, ngrid=None, rng=None, interpolant=None,
                   center=galsim.PositionD(0,0), units=galsim.arcsec, get_convergence=False,
-                  kmax_factor=1, kmin_factor=1, bandlimit="hard"):
+                  kmax_factor=1, kmin_factor=1, bandlimit="hard", variance=None):
         """Generate a realization of the current power spectrum on the specified grid.
 
         Basic functionality
@@ -423,6 +423,14 @@ class PowerSpectrum(object):
                                 does not modify the internally-stored power spectrum, just the
                                 shears generated for this particular call to buildGrid().
                                 [default: "hard"]
+        @param variance         Optionally renormalize the variance of the output shears to a
+                                given value.  This is useful if you know the functional form of
+                                the power spectrum you want, but not the normalization.  This lets
+                                you set the normalization separately.  The resulting shears should
+                                have var(g1) + var(g2) ~= variance.  If only e_power_function is
+                                given, then this is also the variance of kappa.  Otherwise, the
+                                variance of kappa may be smaller than the specified variance.
+                                [default: None]
 
         @returns the tuple (g1,g2[,kappa]), where each is a 2-d NumPy array and kappa is included
                  iff `get_convergence` is set to True.
@@ -496,13 +504,7 @@ class PowerSpectrum(object):
         # edge being considered off the edge.
         self.bounds = self.bounds.expand( 1. + 1.e-15 )
 
-        # Make a GaussianDeviate if necessary
-        if rng is None:
-            gd = galsim.GaussianDeviate()
-        elif isinstance(rng, galsim.BaseDeviate):
-            gd = galsim.GaussianDeviate(rng)
-        else:
-            raise TypeError("The rng provided to buildGrid is not a BaseDeviate")
+        gd = galsim.GaussianDeviate(rng)
 
         # Check that the interpolant is valid.
         if interpolant is None:
@@ -571,7 +573,7 @@ class PowerSpectrum(object):
         self.ngrid_tot = ngrid * kmin_factor * kmax_factor
         self.pixel_size = grid_spacing/kmax_factor
         psr = PowerSpectrumRealizer(self.ngrid_tot, self.pixel_size, p_E, p_B)
-        self.grid_g1, self.grid_g2, self.grid_kappa = psr(gd)
+        self.grid_g1, self.grid_g2, self.grid_kappa = psr(gd, variance)
         if kmin_factor != 1 or kmax_factor != 1:
             # Need to make sure the rows are contiguous so we can use it in the constructor
             # of the ImageD objects below.  This requires a copy.
@@ -664,13 +666,14 @@ class PowerSpectrum(object):
                 # Detect at least _some_ forms of malformed string input.  Note that this
                 # test assumes that the eval string completion is defined for k=1.0.
                 try:
-                    origpf = pf
-                    pf = eval('lambda k : ' + pf)
+                    pf = galsim.utilities.math_eval('lambda k : ' + pf)
                     pf(1.0)
-                except:
+                except Exception as e:
                     raise ValueError(
                         "String power_spectrum must either be a valid filename or something that "+
-                        "can eval to a function of k. Input provided: {0}".format(origpf))
+                        "can eval to a function of k.\n"+
+                        "Input provided: {0}\n".format(origpf)+
+                        "Caught error: {0}".format(e))
 
 
         # Check that the function is sane.
@@ -680,9 +683,7 @@ class PowerSpectrum(object):
         #        same length as the input.)
         if not isinstance(pf, galsim.LookupTable):
             f1 = pf(np.array((0.1,1.)))
-            fake_arr = np.zeros(2)
-            fake_p = pf(fake_arr)
-            if isinstance(fake_p, float):
+            if isinstance(f1, float):
                 raise AttributeError(
                     "Power function MUST return a list/array same length as input")
         return pf
@@ -1020,7 +1021,7 @@ class PowerSpectrum(object):
                 >>> g1, g2 = my_ps.getShear(pos = (12, 412))
 
         3. Get the shears for a bunch of points at once:
-        
+
                 >>> xlist = [ 141, 313,  12, 241, 342 ]
                 >>> ylist = [  75, 199, 306, 225, 489 ]
                 >>> poslist = [ galsim.PositionD(xlist[i],ylist[i]) for i in range(len(xlist)) ]
@@ -1599,10 +1600,18 @@ class PowerSpectrumRealizer(object):
     def recompute_power(self):
         self.set_power(self.p_E, self.p_B)
 
-    def __call__(self, gd):
+    def __call__(self, gd, variance=None):
         """Generate a realization of the current power spectrum.
 
         @param gd               A Gaussian deviate to use when generating the shear fields.
+        @param variance         Optionally renormalize the variance of the output shears to a
+                                given value.  This is useful if you know the functional form of
+                                the power spectrum you want, but not the normalization.  This lets
+                                you set the normalization separately.  The resulting shears should
+                                have var(g1) + var(g2) ~= variance.  If only e_power_function is
+                                given, then this is also the variance of kappa.  Otherwise, the
+                                variance of kappa may be smaller than the specified variance.
+                                [default: None]
 
         @return a tuple of NumPy arrays (g1,g2,kappa) for the shear and convergence.
         """
@@ -1616,7 +1625,7 @@ class PowerSpectrumRealizer(object):
         if self.amplitude_E is not None:
             r1 = galsim.utilities.rand_arr(self.amplitude_E.shape, gd)
             r2 = galsim.utilities.rand_arr(self.amplitude_E.shape, gd)
-            E_k = np.empty((self.ny,self.nx)).astype(type(1.+1.j))
+            E_k = np.empty((self.ny,self.nx), dtype=complex)
             E_k[:,self.ikx] = self.amplitude_E * (r1 + 1j*r2) * ISQRT2
             # E_k corresponds to real kappa, so E_k[-k] = conj(E_k[k])
             self._make_hermitian(E_k)
@@ -1626,7 +1635,7 @@ class PowerSpectrumRealizer(object):
         if self.amplitude_B is not None:
             r1 = galsim.utilities.rand_arr(self.amplitude_B.shape, gd)
             r2 = galsim.utilities.rand_arr(self.amplitude_B.shape, gd)
-            B_k = np.empty((self.ny,self.nx)).astype(type(1.+1.j))
+            B_k = np.empty((self.ny,self.nx), dtype=complex)
             B_k[:,self.ikx] = self.amplitude_B * (r1 + 1j*r2) * ISQRT2
             # B_k corresponds to imag kappa, so B_k[-k] = -conj(B_k[k])
             # However, we later multiply this by i, so that means here B_k[-k] = conj(B_k[k])
@@ -1637,6 +1646,13 @@ class PowerSpectrumRealizer(object):
         # In terms of kappa, the E mode is the real kappa, and the B mode is imaginary kappa:
         # In fourier space, both E_k and B_k are complex, but the same E + i B relation holds.
         kappa_k = E_k + 1j * B_k
+
+        # Renormalize the variance if desired
+        if variance is not None:
+            current_var = np.sum(np.abs(kappa_k)**2) / (self.nx * self.ny)
+            factor = np.sqrt(variance / current_var)
+            kappa_k *= factor
+            E_k *= factor  # Need this for the k return value below.
 
         # Compute gamma_k as exp(2i psi) kappa_k
         # Equation 2.1.12 of Kaiser & Squires (1993, ApJ, 404, 441) is equivalent to:
@@ -1758,7 +1774,6 @@ def kappaKaiserSquires(g1, g2):
     prior to input.
     """
     # Checks on inputs
-    import galsim.utilities
     if isinstance(g1, galsim.Image) and isinstance(g2, galsim.Image):
         g1 = g1.array
         g2 = g2.array

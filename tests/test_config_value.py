@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -36,6 +36,10 @@ except ImportError:
 def test_float_value():
     """Test various ways to generate a float value
     """
+    halo_mass = 1.e14
+    halo_conc = 4
+    halo_z = 0.3
+    gal_z = 1.3
     config = {
         'input' : { 'catalog' : [
                         { 'dir' : 'config_input', 'file_name' : 'catalog.txt' },
@@ -43,7 +47,11 @@ def test_float_value():
                     'dict' : [
                         { 'dir' : 'config_input', 'file_name' : 'dict.p' },
                         { 'dir' : 'config_input', 'file_name' : 'dict.json' },
-                        { 'dir' : 'config_input', 'file_name' : 'dict.yaml' } ] },
+                        { 'dir' : 'config_input', 'file_name' : 'dict.yaml' } ],
+                    'nfw_halo' : { 'mass' : halo_mass, 'conc' : halo_conc, 'redshift' : halo_z },
+                    'power_spectrum' : { 'e_power_function' : 'np.exp(-k**0.2)',
+                                         'grid_spacing' : 10, 'interpolant' : 'linear' },
+                  },
 
         'val1' : 9.9,
         'val2' : int(400),
@@ -90,7 +98,18 @@ def test_float_value():
         'dict2' : { 'type' : 'Dict', 'num' : 1, 'key' : 'f' },
         'dict3' : { 'type' : 'Dict', 'num' : 2, 'key' : 'f' },
         'dict4' : { 'type' : 'Dict', 'num' : 2, 'key' : 'noise.models.1.gain' },
-        'sum1' : { 'type' : 'Sum', 'items' : [ 72, '2.33', { 'type' : 'Dict', 'key' : 'f' } ] }
+        'sum1' : { 'type' : 'Sum', 'items' : [ 72, '2.33', { 'type' : 'Dict', 'key' : 'f' } ] },
+        'nfw' : { 'type' : 'NFWHaloMagnification' },
+        'ps' : { 'type' : 'PowerSpectrumMagnification' },
+        'no_type' : { 'value' : 34. },
+        'bad_key' : { 'type' : 'RandomGaussian', 'sig' : 1 },
+        'bad_value' : { 'type' : 'RandomGaussian', 'sigma' : 'not a number' },
+
+        # Some items that would normally be set by the config processing
+        'image_xsize' : 2000,
+        'image_ysize' : 2000,
+        'wcs' : galsim.PixelScale(0.1),
+        'image_center' : galsim.PositionD(0,0),
     }
 
     test_yaml = True
@@ -108,6 +127,12 @@ def test_float_value():
 
     val2 = galsim.config.ParseValue(config,'val2',config, float)[0]
     np.testing.assert_almost_equal(val2, 400)
+
+    # You can also give None as the value type, which just returns whatever is in the dict.
+    val1b  = galsim.config.ParseValue(config,'val1',config, None)[0]
+    val2b  = galsim.config.ParseValue(config,'val2',config, None)[0]
+    np.testing.assert_almost_equal(val1b, 9.9)
+    np.testing.assert_almost_equal(val2b, 400)
 
     # Test conversions from strings
     str1 = galsim.config.ParseValue(config,'str1',config, float)[0]
@@ -143,7 +168,7 @@ def test_float_value():
     config['rng'] = galsim.UniformDeviate(1234) # A second copy starting with the same seed.
     for k in range(6):
         config['obj_num'] = k  # The Random type doesn't use obj_num, but this keeps it
-                               # from thinking current_val is still current.
+                               # from thinking "current" value is still current.
         ran1 = galsim.config.ParseValue(config,'ran1',config, float)[0]
         np.testing.assert_almost_equal(ran1, rng() * 2.5 + 0.5)
 
@@ -293,6 +318,107 @@ def test_float_value():
     sum1 = galsim.config.ParseValue(config,'sum1',config, float)[0]
     np.testing.assert_almost_equal(sum1, 72 + 2.33 + 23.17)
 
+    # Test NFWHaloMagnification
+    galsim.config.SetupInputsForImage(config, None)
+    try:
+        # Raise an error because no world_pos
+        np.testing.assert_raises(ValueError,galsim.config.ParseValue, config,'nfw',config, float)
+        config['world_pos'] = galsim.PositionD(6,8)
+        # Still raise an error because no redshift
+        np.testing.assert_raises(ValueError,galsim.config.ParseValue, config,'nfw',config, float)
+        # With this, it should work.
+        config['gal'] = { 'redshift' : gal_z }
+    except ImportError:
+        pass
+    nfw_halo = galsim.NFWHalo(mass=halo_mass, conc=halo_conc, redshift=halo_z)
+    print("weak lensing mag = ",nfw_halo.getMagnification((6,8), gal_z))
+    nfw1 = galsim.config.ParseValue(config,'nfw',config, float)[0]
+    np.testing.assert_almost_equal(nfw1, nfw_halo.getMagnification((6,8), gal_z))
+
+    # Too large magnification should max out at 25
+    galsim.config.RemoveCurrent(config)
+    config['world_pos'] = galsim.PositionD(0.1,0.3)
+    print("strong lensing mag = ",nfw_halo.getMagnification((0.1,0.3), gal_z))
+    galsim.config.RemoveCurrent(config)
+    with CaptureLog() as cl:
+        galsim.config.SetupInputsForImage(config, cl.logger)
+        nfw2 = galsim.config.ParseValue(config, 'nfw', config, float)[0]
+    print(cl.output)
+    assert "Warning: NFWHalo mu = 249.374050 means strong lensing." in cl.output
+    np.testing.assert_almost_equal(nfw2, 25.)
+
+    # Or set a different maximum
+    galsim.config.RemoveCurrent(config)
+    config['nfw']['max_mu'] = 3000.
+    del config['nfw']['_get']
+    config['world_pos'] = galsim.PositionD(0.1,0.3)
+    nfw3 = galsim.config.ParseValue(config,'nfw',config, float)[0]
+    np.testing.assert_almost_equal(nfw3, nfw_halo.getMagnification((0.1,0.3), gal_z))
+
+    # Also, if it goes negative, it should report the max_mu value.
+    galsim.config.RemoveCurrent(config)
+    config['world_pos'] = galsim.PositionD(0.1,0.2)
+    print("very strong lensing mag = ",nfw_halo.getMagnification((0.1,0.2), gal_z))
+    with CaptureLog() as cl:
+        galsim.config.SetupInputsForImage(config, cl.logger)
+        nfw4 = galsim.config.ParseValue(config, 'nfw', config, float)[0]
+    print(cl.output)
+    assert "Warning: NFWHalo mu = -163.631846 means strong lensing." in cl.output
+    np.testing.assert_almost_equal(nfw4, 3000.)
+
+    # Test PowerSpectrumMagnification
+    ps = galsim.PowerSpectrum(e_power_function='np.exp(-k**0.2)')
+    galsim.config.RemoveCurrent(config)
+    config['rng'] = rng.duplicate()  # reset them back to be in sync
+    ps.buildGrid(grid_spacing=10, ngrid=20, interpolant='linear', rng=rng)
+    print("ps mag = ",ps.getMagnification((0.1,0.2)))
+    galsim.config.SetupInputsForImage(config, None)
+    ps1 = galsim.config.ParseValue(config,'ps',config, float)[0]
+    np.testing.assert_almost_equal(ps1, ps.getMagnification((0.1,0.2)))
+
+    # Beef up the amplitude to get strong lensing.
+    ps = galsim.PowerSpectrum(e_power_function='500 * np.exp(-k**0.2)')
+    ps.buildGrid(grid_spacing=10, ngrid=20, interpolant='linear', rng=rng)
+    print("strong lensing mag = ",ps.getMagnification((0.1,0.2)))
+    galsim.config.RemoveCurrent(config)
+    del config['input_objs']
+    config['input']['power_spectrum']['e_power_function'] = '500 * np.exp(-k**0.2)'
+    with CaptureLog() as cl:
+        galsim.config.SetupInputsForImage(config, logger=cl.logger)
+        ps2a = galsim.config.ParseValue(config,'ps',config, float)[0]
+    assert 'PowerSpectrum mu = -3.643856 means strong lensing. Using mu=25.000000' in cl.output
+    np.testing.assert_almost_equal(ps2a, 25.)
+
+    galsim.config.RemoveCurrent(config)
+    # Need a different point that happens to have strong lensing, since the PS realization changed.
+    config['world_pos'] = galsim.PositionD(3.1,24.2)
+    with CaptureLog() as cl:
+        galsim.config.SetupInputsForImage(config, cl.logger)
+        ps2b = galsim.config.ParseValue(config, 'ps', config, float)[0]
+    assert "Warning: PowerSpectrum mu = 29.287659 means strong lensing." in cl.output
+    np.testing.assert_almost_equal(ps2b, 25.)
+
+    # Out of bounds results in shear = 0, and a warning.
+    galsim.config.RemoveCurrent(config)
+    config['world_pos'] = galsim.PositionD(1000,2000)
+    with CaptureLog() as cl:
+        galsim.config.SetupInputsForImage(config, cl.logger)
+        ps2c = galsim.config.ParseValue(config, 'ps', config, float)[0]
+    print(cl.output)
+    assert "Warning: position (1000.000000,2000.000000) not within the bounds" in cl.output
+    np.testing.assert_almost_equal(ps2c, 1.)
+
+    # Should raise an AttributeError if there is no type in the dict
+    try:
+        np.testing.assert_raises(AttributeError, galsim.config.ParseValue, config,
+                                 'no_type', config, float)
+        np.testing.assert_raises(AttributeError, galsim.config.ParseValue, config,
+                                 'bad_key', config, float)
+        np.testing.assert_raises(ValueError, galsim.config.ParseValue, config,
+                                 'bad_value', config, float)
+    except ImportError:
+        pass
+
 
 @timer
 def test_int_value():
@@ -334,10 +460,12 @@ def test_int_value():
         'list2' : { 'type' : 'List',
                     'items' : [ 6, 8, 1, 7, 3, 5, 1, 0, 6, 3, 8, 2 ],
                     'index' : { 'type' : 'Sequence', 'first' : 10, 'step' : -3 } },
+        'list3' : [ 1, 2, 3, 4 ],
+        'list4' : [],
         'dict1' : { 'type' : 'Dict', 'key' : 'i' },
         'dict2' : { 'type' : 'Dict', 'num' : 1, 'key' : 'i' },
         'dict3' : { 'type' : 'Dict', 'num' : 2, 'key' : 'i' },
-        'sum1' : { 'type' : 'Sum', 'items' : [ 72.3, '2', { 'type' : 'Dict', 'key' : 'i' } ] }
+        'sum1' : { 'type' : 'Sum', 'items' : [ 72.3, '2', { 'type' : 'Dict', 'key' : 'i' } ] },
     }
 
     test_yaml = True
@@ -478,6 +606,18 @@ def test_int_value():
     np.testing.assert_array_equal(list1, [ 73, 8, 3, 73, 8 ])
     np.testing.assert_array_equal(list2, [ 8, 0, 3, 8, 8 ])
 
+    # Test a direct list in the config file.
+    list3  = galsim.config.ParseValue(config,'list3',config, list)[0]
+    list4  = galsim.config.ParseValue(config,'list4',config, list)[0]
+    np.testing.assert_array_equal(list3, [ 1, 2, 3, 4 ])
+    np.testing.assert_array_equal(list4, [])
+
+    # You can also give None as the value type, which just returns whatever is in the dict.
+    list3b  = galsim.config.ParseValue(config,'list3',config, None)[0]
+    list4b  = galsim.config.ParseValue(config,'list4',config, None)[0]
+    np.testing.assert_array_equal(list3b, [ 1, 2, 3, 4 ])
+    np.testing.assert_array_equal(list4b, [])
+
     # Test values read from a Dict
     dict = []
     dict.append(galsim.config.ParseValue(config,'dict1',config, int)[0])
@@ -517,6 +657,7 @@ def test_bool_value():
         'cat3' : { 'type' : 'Catalog' , 'num' : 1, 'col' : 'bool1' },
         'cat4' : { 'type' : 'Catalog' , 'num' : 1, 'col' : 'bool2' },
         'ran1' : { 'type' : 'Random' },
+        'ran2' : { 'type' : 'Random', 'p' : 0.8 },
         'dev1' : { 'type' : 'RandomBinomial', 'N' : 1 },
         'dev2' : { 'type' : 'RandomBinomial', 'N' : 1, 'p' : 0.5 },
         'dev3' : { 'type' : 'RandomBinomial', 'p' : 0.2 },
@@ -588,6 +729,11 @@ def test_bool_value():
         config['obj_num'] = k
         ran1 = galsim.config.ParseValue(config,'ran1',config, bool)[0]
         np.testing.assert_equal(ran1, rng() < 0.5)
+
+    for k in range(6):
+        config['obj_num'] = k
+        ran1 = galsim.config.ParseValue(config,'ran2',config, bool)[0]
+        np.testing.assert_equal(ran1, rng() < 0.8)
 
     # Test values generated from binomial deviate
     for k in range(6):
@@ -809,6 +955,11 @@ def test_angle_value():
     val2 = galsim.config.ParseValue(config,'val2',config, galsim.Angle)[0]
     np.testing.assert_almost_equal(val2.rad(), -41 * math.pi/180)
 
+    val1b = galsim.config.ParseValue(config,'val1',config, None)[0]
+    val2b = galsim.config.ParseValue(config,'val2',config, None)[0]
+    np.testing.assert_almost_equal(val1b.rad(), 1.9)
+    np.testing.assert_almost_equal(val2b.rad(), -41 * math.pi/180)
+
     # Test conversions from strings
     str1 = galsim.config.ParseValue(config,'str1',config, galsim.Angle)[0]
     np.testing.assert_almost_equal(str1.rad(), 0.73)
@@ -891,6 +1042,10 @@ def test_angle_value():
 def test_shear_value():
     """Test various ways to generate a Shear value
     """
+    halo_mass = 1.e14
+    halo_conc = 4
+    halo_z = 0.3
+    gal_z = 1.3
     config = {
         'val1' : galsim.Shear(g1=0.2, g2=0.3),
         'val2' : galsim.Shear(e1=0.1),
@@ -908,7 +1063,15 @@ def test_shear_value():
         'sum1' : { 'type' : 'Sum',
                   'items' : [ galsim.Shear(g1 = 0.2, g2 = -0.3),
                               galsim.Shear(g1 = -0.5, g2 = 0.2),
-                              galsim.Shear(g1 = 0.1, g2 = 0.0) ] }
+                              galsim.Shear(g1 = 0.1, g2 = 0.0) ] },
+        'nfw' : { 'type' : 'NFWHaloShear' },
+        'ps' : { 'type' : 'PowerSpectrumShear' },
+
+        'input' : { 'nfw_halo' : { 'mass' : halo_mass, 'conc' : halo_conc, 'redshift' : halo_z },
+                    'power_spectrum' : { 'e_power_function' : 'np.exp(-k**0.2)',
+                                         'grid_spacing' : 10, 'interpolant' : 'linear',
+                                         'ngrid' : 40, 'center' : '5,5' },
+                  }
     }
 
     # Test direct values
@@ -980,6 +1143,83 @@ def test_shear_value():
     np.testing.assert_almost_equal(sum1.getG1(), s.getG1())
     np.testing.assert_almost_equal(sum1.getG2(), s.getG2())
 
+    # Test NFWHaloShear
+    galsim.config.ProcessInput(config)
+    galsim.config.SetupInputsForImage(config, None)
+    try:
+        # Raise an error because no world_pos
+        np.testing.assert_raises(ValueError, galsim.config.ParseValue, config, 'nfw', config,
+                                 galsim.Shear)
+        config['world_pos'] = galsim.PositionD(6,8)
+        # Still raise an error because no redshift
+        np.testing.assert_raises(ValueError, galsim.config.ParseValue, config, 'nfw', config,
+                                 galsim.Shear)
+        # With this, it should work.
+        config['gal'] = { 'redshift' : gal_z }
+    except ImportError:
+        pass
+    nfw_halo = galsim.NFWHalo(mass=halo_mass, conc=halo_conc, redshift=halo_z)
+    nfw1a = galsim.config.ParseValue(config,'nfw',config, galsim.Shear)[0]
+    nfw1b = nfw_halo.getShear((6,8), gal_z)
+    print('nfw1a = ',nfw1a)
+    print('nfw1b = ',nfw1b)
+    np.testing.assert_almost_equal(nfw1a.g1, nfw1b[0])
+    np.testing.assert_almost_equal(nfw1a.g2, nfw1b[1])
+
+    # If shear is larger than 1, it raises a warning and returns 0,0
+    galsim.config.RemoveCurrent(config)
+    config['world_pos'] = galsim.PositionD(0.1,0.2)
+    print("strong lensing shear = ",nfw_halo.getShear((0.1,0.2), gal_z))
+    with CaptureLog() as cl:
+        galsim.config.SetupInputsForImage(config, cl.logger)
+        nfw2a = galsim.config.ParseValue(config, 'nfw', config, galsim.Shear)[0]
+    print(cl.output)
+    assert "Warning: NFWHalo shear (g1=1.148773, g2=-1.531697) is invalid." in cl.output
+    np.testing.assert_almost_equal((nfw2a.g1, nfw2a.g2), (0,0))
+
+    # Test PowerSpectrumShear
+    rng = galsim.BaseDeviate(1234)
+    config['rng'] = rng.duplicate()
+    ps = galsim.PowerSpectrum(e_power_function='np.exp(-k**0.2)')
+    ps.buildGrid(grid_spacing=10, ngrid=40, center=galsim.PositionD(5,5), interpolant='linear',
+                 rng=rng)
+    config['image_xsize'] = config['image_ysize'] = 2000
+    config['wcs'] = galsim.PixelScale(0.1)
+    config['image_center'] = galsim.PositionD(0,0)
+    galsim.config.SetupInputsForImage(config, None)
+    ps1a = galsim.config.ParseValue(config,'ps',config, galsim.Shear)[0]
+    ps1b = ps.getShear((0.1,0.2))
+    print("ps shear= ",ps1b)
+    np.testing.assert_almost_equal(ps1a.g1, ps1b[0])
+    np.testing.assert_almost_equal(ps1a.g2, ps1b[1])
+
+    # Beef up the amplitude to get strong lensing.
+    ps = galsim.PowerSpectrum(e_power_function='500 * np.exp(-k**0.2)')
+    ps.buildGrid(grid_spacing=10, ngrid=40, center=galsim.PositionD(5,5), interpolant='linear',
+                 rng=rng)
+    print("strong lensing shear = ",ps.getShear((0.1,0.2)))
+    galsim.config.RemoveCurrent(config)
+    del config['input_objs']
+    config['input']['power_spectrum']['e_power_function'] = '500 * np.exp(-k**0.2)'
+    galsim.config.SetupInputsForImage(config, None)
+    ps2b = ps.getShear((0.1,0.2))
+    print("ps shear= ",ps2b)
+    with CaptureLog() as cl:
+        galsim.config.SetupInputsForImage(config, logger=cl.logger)
+        ps2a = galsim.config.ParseValue(config,'ps',config, galsim.Shear)[0]
+    assert 'PowerSpectrum shear (g1=-1.626101, g2=0.287082) is invalid. Using shear = 0.' in cl.output
+    np.testing.assert_almost_equal((ps2a.g1, ps2a.g2), (0,0))
+
+    # Out of bounds results in shear = 0, and a warning.
+    galsim.config.RemoveCurrent(config)
+    config['world_pos'] = galsim.PositionD(1000,2000)
+    with CaptureLog() as cl:
+        galsim.config.SetupInputsForImage(config, cl.logger)
+        ps2c = galsim.config.ParseValue(config, 'ps', config, galsim.Shear)[0]
+    print(cl.output)
+    assert "Warning: position (1000.000000,2000.000000) not within the bounds" in cl.output
+    np.testing.assert_almost_equal((ps2c.g1, ps2c.g2), (0,0))
+
 
 @timer
 def test_pos_value():
@@ -989,6 +1229,9 @@ def test_pos_value():
         'val1' : galsim.PositionD(0.1,0.2),
         'xy1' : { 'type' : 'XY', 'x' : 1.3, 'y' : 2.4 },
         'ran1' : { 'type' : 'RandomCircle', 'radius' : 3 },
+        'ran2' : { 'type' : 'RandomCircle', 'radius' : 1, 'center' : galsim.PositionD(3,7) },
+        'ran3' : { 'type' : 'RandomCircle', 'radius' : 3.1, 'center' : galsim.PositionD(0.2,-0.9),
+                   'inner_radius' : 1.3 },
         'list1' : { 'type' : 'List',
                     'items' : [ galsim.PositionD(0.2, -0.3),
                                 galsim.PositionD(-0.5, 0.2),
@@ -996,7 +1239,8 @@ def test_pos_value():
         'sum1' : { 'type' : 'Sum',
                    'items' : [ galsim.PositionD(0.2, -0.3),
                                galsim.PositionD(-0.5, 0.2),
-                               galsim.PositionD(0.1, 0.0) ] }
+                               galsim.PositionD(0.1, 0.0) ] },
+        'radec' : { 'type' : 'RADec', 'ra' : 13.4 * galsim.hours, 'dec' : -0.3 * galsim.degrees },
     }
 
     # Test direct values
@@ -1008,7 +1252,7 @@ def test_pos_value():
     np.testing.assert_almost_equal(xy1.x, 1.3)
     np.testing.assert_almost_equal(xy1.y, 2.4)
 
-    # Test values generated from a uniform deviate
+    # Test values generated in a random circle
     rng = galsim.UniformDeviate(1234)
     config['rng'] = galsim.UniformDeviate(1234) # A second copy starting with the same seed.
     config['index_key'] = 'image_num'
@@ -1023,6 +1267,24 @@ def test_pos_value():
             if rsq <= 9: break
         np.testing.assert_almost_equal(ran1.x, x)
         np.testing.assert_almost_equal(ran1.y, y)
+
+        ran2 = galsim.config.ParseValue(config,'ran2',config, galsim.PositionD)[0]
+        while True:
+            x = (2*rng()-1)
+            y = (2*rng()-1)
+            rsq = x**2 + y**2
+            if rsq <= 1: break
+        np.testing.assert_almost_equal(ran2.x, x+3)
+        np.testing.assert_almost_equal(ran2.y, y+7)
+
+        ran3 = galsim.config.ParseValue(config,'ran3',config, galsim.PositionD)[0]
+        while True:
+            x = (2*rng()-1) * 3.1
+            y = (2*rng()-1) * 3.1
+            rsq = x**2 + y**2
+            if rsq >= 1.3**2 and rsq <= 3.1**2: break
+        np.testing.assert_almost_equal(ran3.x, x+0.2)
+        np.testing.assert_almost_equal(ran3.y, y-0.9)
 
     # Test values taken from a List
     list1 = []
@@ -1046,6 +1308,197 @@ def test_pos_value():
     np.testing.assert_almost_equal(sum1.x, 0.2 - 0.5 + 0.1)
     np.testing.assert_almost_equal(sum1.y, -0.3 + 0.2 + 0.0)
 
+    radec = galsim.config.ParseValue(config,'radec',config, galsim.CelestialCoord)[0]
+    np.testing.assert_almost_equal(radec.ra / galsim.hours, 13.4 - 24) # wraps around to negative.
+    np.testing.assert_almost_equal(radec.dec / galsim.degrees, -0.3)
+
+
+@timer
+def test_eval():
+    """Test various ways that we evaluate a string as a function or value
+    """
+    config = {
+        # The basic calculation
+        'eval1' : { 'type' : 'Eval', 'str' : 'np.exp(-0.5 * 1.8**2)' },
+        # Different ways to get variables
+        'eval2' : { 'type' : 'Eval', 'str' : 'np.exp(-0.5 * x**2)', 'fx' : 1.8 },
+        'eval3' : { 'type' : 'Eval', 'str' : 'np.exp(-y**2 / two) if maybe else 0.' },
+        # Make sure to use all valid letter prefixes here...
+        'eval_variables' : { 'fy' : 1.8, 'bmaybe' : True, 'itwo' : 2, 'shalf' : '0.5',
+                             'atheta' : 1.8 * galsim.radians,
+                             'ppos' : galsim.PositionD(1.8,0),
+                             'ccoord' : galsim.CelestialCoord(1.8*galsim.radians,0*galsim.radians),
+                             'gshear' : galsim.Shear(g1=0.5, g2=0),
+                             'xlit_two' : 2,
+                           },
+        # Shorthand notation with $
+        'eval4' : '$np.exp(-0.5 * y**2)',
+        # math and numpy should also work
+        'eval5' : '$numpy.exp(-0.5 * y**2)',
+        'eval6' : '$math.exp(-0.5 * y**2)',
+        # Use variables that are automatically defined
+        'eval7' : '$np.exp(-0.5 * image_pos.x**2)',
+        'eval8' : '$np.exp(-0.5 * world_pos.y**2)',
+        'eval9' : '$np.exp(-0.5 * pixel_scale**2)',
+        'eval10' : '$np.exp(-0.5 * (image_xsize / 100.)**2)',
+        'eval11' : '$np.exp(-0.5 * (image_ysize / 200.)**2)',
+        'eval12' : '$np.exp(-0.5 * (stamp_xsize / 20.)**2)',
+        'eval13' : '$np.exp(-0.5 * (stamp_ysize / 20.)**2)',
+        'eval14' : '$np.exp(-0.5 * (image_bounds.xmax / 100.)**2)',
+        'eval15' : '$np.exp(-0.5 * ((image_center.y-0.5) / 100.)**2)',
+        'eval16' : '$np.exp(-0.5 * wcs.scale**2)',
+        # Shorthand notation with @
+        'psf' : { 'type' : 'Gaussian', 'sigma' : 1.8 },
+        'eval17' : '$np.exp(-@psf.sigma**2 / @eval_variables.itwo)',
+        # A couple more to cover the other various letter prefixes.
+        'eval18' : { 'type' : 'Eval', 'str' : 'np.exp(-eval(half) * theta.rad()**lit_two)' },
+        'eval19' : { 'type' : 'Eval', 'str' : 'np.exp(-shear.g1 * pos.x * coord.ra.rad())' },
+
+        # These would be set by config in real runs, but just add them here for the tests.
+        'image_pos' : galsim.PositionD(1.8,13),
+        'world_pos' : galsim.PositionD(7.2,1.8),
+        'pixel_scale' : 1.8,
+        'image_xsize' : 180,
+        'image_ysize' : 360,
+        'stamp_xsize' : 36,
+        'stamp_ysize' : 36,
+        'image_bounds' : galsim.BoundsI(1,180,1,360),
+        'image_center' : galsim.PositionD(90.5, 180.5),
+        'wcs' : galsim.PixelScale(1.8),
+    }
+
+    true_val = np.exp(-0.5 * 1.8**2)  # All of these should equal this value.
+    for i in range(1,20):
+        test_val = galsim.config.ParseValue(config, 'eval%d'%i, config, float)[0]
+        print('i = ',i, 'val = ',test_val,true_val)
+        np.testing.assert_almost_equal(test_val, true_val)
+
+    # Test the evaluation in RandomDistribution
+    # Example config taken directly from Issue #776:
+    config['shear'] = {
+        'type': 'GBeta',
+        'g': {
+            'type': 'RandomDistribution',
+            'function': "(1-x**2)**2 * np.exp( -0.5 * x**2 / 0.2**2 )",
+            'x_min': 0.0,
+            'x_max': 1.0,
+        },
+        'beta': {
+            'type': 'Random'
+        }
+    }
+
+    rng = galsim.UniformDeviate(1234)
+    config['rng'] = galsim.UniformDeviate(1234)
+
+    dd = galsim.DistDeviate(rng, function=lambda x: (1-x**2)**2 * np.exp(-0.5*x**2/0.2**2),
+                            x_min=0., x_max=1.)
+    for k in range(6):
+        config['obj_num'] = k
+        shear1 = galsim.config.ParseValue(config,'shear',config, galsim.Shear)[0]
+        shear2 = galsim.Shear(beta=rng()*360.*galsim.degrees, g=dd()) # order matters here.
+        print('k = ',k,'shear1 = ',shear1,'shear2 = ',shear2)
+        np.testing.assert_almost_equal(shear1.g1, shear2.g1)
+        np.testing.assert_almost_equal(shear1.g2, shear2.g2)
+
+    # Should also work using numpy or math instead of np
+    config['shear']['g']['function'] = "(1-x**2)**2 * numpy.exp( -0.5 * x**2 / 0.2**2 )"
+    for k in range(6):
+        config['obj_num'] = k
+        shear1 = galsim.config.ParseValue(config,'shear',config, galsim.Shear)[0]
+        shear2 = galsim.Shear(beta=rng()*360.*galsim.degrees, g=dd()) # order matters here.
+        print('k = ',k,'shear1 = ',shear1,'shear2 = ',shear2)
+        np.testing.assert_almost_equal(shear1.g1, shear2.g1)
+        np.testing.assert_almost_equal(shear1.g2, shear2.g2)
+
+    config['shear']['g']['function'] = "(1-x**2)**2 * math.exp( -0.5 * x**2 / 0.2**2 )"
+    for k in range(6):
+        config['obj_num'] = k
+        shear1 = galsim.config.ParseValue(config,'shear',config, galsim.Shear)[0]
+        shear2 = galsim.Shear(beta=rng()*360.*galsim.degrees, g=dd()) # order matters here.
+        print('k = ',k,'shear1 = ',shear1,'shear2 = ',shear2)
+        np.testing.assert_almost_equal(shear1.g1, shear2.g1)
+        np.testing.assert_almost_equal(shear1.g2, shear2.g2)
+
+    # PowerSpectrum evaluates e_power_function and b_power_function, so check those.
+    config['input'] = {
+        'power_spectrum' :  [
+            {
+                'e_power_function' : 'np.exp(-k**0.2)',
+                'b_power_function' : 'np.exp(-k**1.2)',
+                'grid_spacing' : 10
+            },
+            {
+                'e_power_function' : 'numpy.exp(-k**0.2)',
+                'b_power_function' : 'numpy.exp(-k**1.2)',
+                'grid_spacing' : 10,
+                'index' : { 'type' : 'Sequence', 'repeat' : 3 }
+            },
+            # math doesn't work for acting on k, since it is a numpy array, but
+            # we can check that math.sqrt works.
+            {
+                'e_power_function' : 'np.exp(-k ** math.sqrt(0.04))',
+                'b_power_function' : 'np.exp(-k ** math.log(math.exp(1.2)))',
+                'grid_spacing' : 10,
+                'variance' : 0.05,
+            },
+        ]
+    }
+    config['ps_shear'] = { 'type' : 'PowerSpectrumShear' }
+    config['ps_mu'] = { 'type' : 'PowerSpectrumMagnification' }
+    config['ps_shear1'] = { 'type' : 'PowerSpectrumShear', 'num' : 1 }
+    config['ps_mu1'] = { 'type' : 'PowerSpectrumMagnification', 'num' : 1 }
+    config['ps_shear2'] = { 'type' : 'PowerSpectrumShear', 'num' : 2 }
+    config['ps_mu2'] = { 'type' : 'PowerSpectrumMagnification', 'num' : 2 }
+
+    config['index_key'] = 'file_num'
+    config['file_num'] = 0
+    config['image'] = { 'random_seed' : 1234 }
+    rng = galsim.BaseDeviate(1234)
+    galsim.config.ProcessInput(config)
+    galsim.config.SetupInputsForImage(config, None)
+    ps = galsim.PowerSpectrum(e_power_function = lambda k: np.exp(-k**0.2),
+                              b_power_function = lambda k: np.exp(-k**1.2))
+    # ngrid is calculated from the image size by config, which was setup above.
+    grid_spacing = 10.
+    ngrid = int(math.ceil(config['image_ysize'] * config['pixel_scale'] / grid_spacing))
+    center = config['wcs'].toWorld(config['image_center'])
+    ps.buildGrid(grid_spacing=10, ngrid=ngrid, center=center, rng=rng)
+    g1,g2,mu = ps.getLensing(pos = config['world_pos'])
+    ps_shear = galsim.config.ParseValue(config, 'ps_shear', config, galsim.Shear)[0]
+    ps_mu = galsim.config.ParseValue(config, 'ps_mu', config, float)[0]
+    print('num = 0')
+    print(g1,g2,mu)
+    print(ps_shear,ps_mu)
+    np.testing.assert_almost_equal(ps_shear.g1, g1)
+    np.testing.assert_almost_equal(ps_shear.g2, g2)
+    np.testing.assert_almost_equal(ps_mu, mu)
+
+    # Check use of numpy in the evaluated string
+    rng2 = galsim.BaseDeviate(1234 + 31415)
+    ps.buildGrid(grid_spacing=10, ngrid=ngrid, center=center, rng=rng2)
+    g1,g2,mu = ps.getLensing(pos = config['world_pos'])
+    ps_shear = galsim.config.ParseValue(config, 'ps_shear1', config, galsim.Shear)[0]
+    ps_mu = galsim.config.ParseValue(config, 'ps_mu1', config, float)[0]
+    print('num = 1')
+    print(g1,g2,mu)
+    print(ps_shear,ps_mu)
+    np.testing.assert_almost_equal(ps_shear.g1, g1)
+    np.testing.assert_almost_equal(ps_shear.g2, g2)
+    np.testing.assert_almost_equal(ps_mu, mu)
+
+    # Check use of math in the evaluated string
+    ps.buildGrid(grid_spacing=10, ngrid=ngrid, center=center, rng=rng, variance=0.05)
+    g1,g2,mu = ps.getLensing(pos = config['world_pos'])
+    ps_shear = galsim.config.ParseValue(config, 'ps_shear2', config, galsim.Shear)[0]
+    ps_mu = galsim.config.ParseValue(config, 'ps_mu2', config, float)[0]
+    print('num = 2')
+    print(g1,g2,mu)
+    print(ps_shear,ps_mu)
+    np.testing.assert_almost_equal(ps_shear.g1, g1)
+    np.testing.assert_almost_equal(ps_shear.g2, g2)
+    np.testing.assert_almost_equal(ps_mu, mu)
+
 
 if __name__ == "__main__":
     test_float_value()
@@ -1055,3 +1508,4 @@ if __name__ == "__main__":
     test_angle_value()
     test_shear_value()
     test_pos_value()
+    test_eval()
