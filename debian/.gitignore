@@ -5,5 +5,6 @@ files
 *.substvars
 *.debhelper
 libgalsim1.4/
+galsim/
 galsim-dev/
 python-galsim/
