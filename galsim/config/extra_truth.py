@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -16,6 +16,7 @@
 #    and/or other materials provided with the distribution.
 #
 
+from past.builtins import basestring
 import galsim
 
 # The truth extra output type builds an OutputCatalog with truth information about each of the
@@ -37,10 +38,10 @@ class TruthBuilder(ExtraOutputBuilder):
     """
     def initialize(self, data, scratch, config, base, logger):
         # Call the base class initialize first.
-        super(self.__class__,self).initialize(data,scratch,config,base,logger)
+        super(TruthBuilder,self).initialize(data,scratch,config,base,logger)
 
         # Warn if the config dict isn't an OrderedDict.
-        if logger and not hasattr(config, '__reversed__') and not hasattr(self,'warned'):
+        if logger and not hasattr(config, '__reversed__') and not hasattr(self,'warned'): # pragma: no cover
             # If config doesn't have a __reversed__ attribute, then it's not an OrderedDict.
             # Probably it's just a regular dict.  So warn the user that the columns are in
             # arbitrary order.
@@ -57,15 +58,13 @@ class TruthBuilder(ExtraOutputBuilder):
         types = []
         for name in cols:
             key = cols[name]
-            # Handle the possibility of unicode.  In particular, this happens with JSON files.
-            if str(key) == key: key = str(key)
             if isinstance(key, dict):
                 # Then the "key" is actually something to be parsed in the normal way.
                 # Caveat: We don't know the value_type here, so we give None.  This allows
                 # only a limited subset of the parsing.  Usually enough for truth items, but
                 # not fully featured.
                 value = galsim.config.ParseValue(cols,name,base,None)[0]
-            elif not isinstance(key,str):
+            elif not isinstance(key,basestring):
                 # The item can just be a constant value.
                 value = key
             elif key[0] == '$':
@@ -73,19 +72,20 @@ class TruthBuilder(ExtraOutputBuilder):
                 value = galsim.config.ParseValue(cols,name,base,None)[0]
             elif key[0] == '@':
                 # Pop off an initial @ if there is one.
-                value = galsim.config.GetCurrentValue(key[1:], base)
+                value = galsim.config.GetCurrentValue(str(key[1:]), base)
             else:
-                value = galsim.config.GetCurrentValue(key, base)
+                # str(key) handles the possibility of unicode.  In particular, this happens with
+                # JSON files.
+                value = galsim.config.GetCurrentValue(str(key), base)
             row.append(value)
             types.append(type(value))
         if 'types' not in self.scratch:
             self.scratch['types'] = types
-        elif self.scratch['types'] != types:
-            if logger:
-                logger.error("Type mismatch found when building truth catalog at object %d",
-                    base['obj_num'])
-                logger.error("Types for current object = %s",repr(types))
-                logger.error("Expecting types = %s",repr(self.scratch['types']))
+        elif self.scratch['types'] != types: # pragma: no cover
+            logger.error("Type mismatch found when building truth catalog at object %d",
+                         base['obj_num'])
+            logger.error("Types for current object = %s",repr(types))
+            logger.error("Expecting types = %s",repr(self.scratch['types']))
             raise RuntimeError("Type mismatch found when building truth catalog.")
         self.scratch[obj_num] = row
 
@@ -93,7 +93,9 @@ class TruthBuilder(ExtraOutputBuilder):
     def finalize(self, config, base, main_data, logger):
         # Make the OutputCatalog
         cols = config['columns']
-        types = self.scratch.pop('types')
+        # Note: Provide a default here, because if all items were skipped it would otherwise
+        # lead to a KeyError.
+        types = self.scratch.pop('types', [float] * len(cols))
         self.cat = galsim.OutputCatalog(names=cols.keys(), types=types)
 
         # Add all the rows in order to the OutputCatalog

@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -18,32 +16,48 @@
 #    and/or other materials provided with the distribution.
 #
 
+
 from __future__ import print_function
 import sys
 import subprocess
 
-cmd = "diff -q %s %s"%(tuple(sys.argv[1:]))
-p = subprocess.Popen([cmd],stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
-diff_output = p.stdout.read()
+def same(file_name1, file_name2):
+    cmd = "diff -q %s %s"%(file_name1, file_name2)
+    p = subprocess.Popen([cmd],stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+    diff_output = p.stdout.read()
+    if len(diff_output) > 0:
+        print(diff_output.strip())
+    return (len(diff_output) == 0)
 
-if len(diff_output) > 0:
+
+def report_txt(file_name1, file_name2):
+    # NB. No -q here:
+    cmd = "diff %s %s"%(file_name1, file_name2)
+    p = subprocess.Popen([cmd],stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+    diff_output = p.stdout.read()
     print(diff_output.strip())
 
+
+def report(file_name1, file_name2):
     try:
         try:
             import astropy.io.fits as pyfits
         except:
             import pyfits
     except ImportError as e:
+        print('Unable to import pyfits')
         # Then /usr/bin/env python doesn't have pyfits installed.  Oh well.
-        sys.exit()
+        # Let diff do the best it can.
+        return report_txt(file_name1, file_name2)
 
+    # Now give more information for fits files
     try:
-        f1 = pyfits.open(sys.argv[1])
-        f2 = pyfits.open(sys.argv[2])
+        f1 = pyfits.open(file_name1)
+        f2 = pyfits.open(file_name2)
     except IOError as e:
-        # Then at least one of the files doesn't exist, which diff will have already reported.
-        sys.exit()
+        # Then either at least one of the files doesn't exist, which diff can report for us,
+        # or the files are txt files, which diff can also do.
+        return report_txt(file_name1, file_name2)
 
     for hdu in range(len(f1)):
         d0 = f1[hdu].data
@@ -67,3 +81,8 @@ if len(diff_output) > 0:
             print('    HDU %d shows differences in %d pixels'%(hdu, (d0!=d1).sum()))
             print('    The maximum absolute difference is %e.'%(abs(d0-d1).max()))
             print('    The maximum relative difference is %e.'%(abs((d0-d1)/(d0+1.e-10)).max()))
+
+
+if __name__ == "__main__":
+    if not same(*sys.argv[1:]):
+        report(*sys.argv[1:])

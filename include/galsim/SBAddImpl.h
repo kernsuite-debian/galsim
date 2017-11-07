@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -83,6 +83,7 @@ namespace galsim {
         { return Position<double>(_sumfx / _sumflux, _sumfy / _sumflux); }
 
         double getFlux() const { return _sumflux; }
+        double maxSB() const;
 
         /**
          * @brief Shoot photons through this SBAdd.
@@ -118,16 +119,20 @@ namespace galsim {
         double getNegativeFlux() const;
 
         // Overrides for better efficiency
-        void fillXValue(tmv::MatrixView<double> val,
+        template <typename T>
+        void fillXImage(ImageView<T> im,
                         double x0, double dx, int izero,
                         double y0, double dy, int jzero) const;
-        void fillXValue(tmv::MatrixView<double> val,
+        template <typename T>
+        void fillXImage(ImageView<T> im,
                         double x0, double dx, double dxy,
                         double y0, double dy, double dyx) const;
-        void fillKValue(tmv::MatrixView<std::complex<double> > val,
+        template <typename T>
+        void fillKImage(ImageView<std::complex<T> > im,
                         double kx0, double dkx, int izero,
                         double ky0, double dky, int jzero) const;
-        void fillKValue(tmv::MatrixView<std::complex<double> > val,
+        template <typename T>
+        void fillKImage(ImageView<std::complex<T> > im,
                         double kx0, double dkx, double dkxy,
                         double ky0, double dky, double dkyx) const;
 
@@ -163,6 +168,39 @@ namespace galsim {
         bool _allAnalyticK;
 
         void initialize();  ///< Sets all private book-keeping variables to starting state.
+
+        void doFillXImage(ImageView<double> im,
+                          double x0, double dx, int izero,
+                          double y0, double dy, int jzero) const
+        { fillXImage(im,x0,dx,izero,y0,dy,jzero); }
+        void doFillXImage(ImageView<double> im,
+                          double x0, double dx, double dxy,
+                          double y0, double dy, double dyx) const
+        { fillXImage(im,x0,dx,dxy,y0,dy,dyx); }
+        void doFillXImage(ImageView<float> im,
+                          double x0, double dx, int izero,
+                          double y0, double dy, int jzero) const
+        { fillXImage(im,x0,dx,izero,y0,dy,jzero); }
+        void doFillXImage(ImageView<float> im,
+                          double x0, double dx, double dxy,
+                          double y0, double dy, double dyx) const
+        { fillXImage(im,x0,dx,dxy,y0,dy,dyx); }
+        void doFillKImage(ImageView<std::complex<double> > im,
+                          double kx0, double dkx, int izero,
+                          double ky0, double dky, int jzero) const
+        { fillKImage(im,kx0,dkx,izero,ky0,dky,jzero); }
+        void doFillKImage(ImageView<std::complex<double> > im,
+                          double kx0, double dkx, double dkxy,
+                          double ky0, double dky, double dkyx) const
+        { fillKImage(im,kx0,dkx,dkxy,ky0,dky,dkyx); }
+        void doFillKImage(ImageView<std::complex<float> > im,
+                          double kx0, double dkx, int izero,
+                          double ky0, double dky, int jzero) const
+        { fillKImage(im,kx0,dkx,izero,ky0,dky,jzero); }
+        void doFillKImage(ImageView<std::complex<float> > im,
+                          double kx0, double dkx, double dkxy,
+                          double ky0, double dky, double dkyx) const
+        { fillKImage(im,kx0,dkx,dkxy,ky0,dky,dkyx); }
 
         // Copy constructor and op= are undefined.
         SBAddImpl(const SBAddImpl& rhs);

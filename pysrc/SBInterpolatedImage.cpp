@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -60,6 +60,7 @@ namespace galsim {
                 .def("getPaddedImage", &SBInterpolatedImage::getPaddedImage)
                 .def("getXInterp", &SBInterpolatedImage::getXInterp)
                 .def("getKInterp", &SBInterpolatedImage::getKInterp)
+                .def("getPadFactor", &SBInterpolatedImage::getPadFactor)
                 ;
             wrapTemplates<float>(pySBInterpolatedImage);
             wrapTemplates<double>(pySBInterpolatedImage);
@@ -69,25 +70,6 @@ namespace galsim {
 
     struct PySBInterpolatedKImage
     {
-        template <typename U, typename W>
-        static void wrapTemplates(W& wrapper)
-        {
-            wrapper
-                .def(bp::init<const BaseImage<U> &,
-                              const BaseImage<U> &,
-                              double, double,
-                              boost::shared_ptr<Interpolant>,
-                              boost::shared_ptr<GSParams> >(
-                                  (bp::arg("real_kimage"),
-                                   bp::arg("imag_kimage"),
-                                   bp::arg("dk"),
-                                   bp::arg("stepk"),
-                                   bp::arg("kInterp"),
-                                   bp::arg("gsparams")=bp::object())
-                     ))
-                ;
-        }
-
         static void wrap()
         {
             bp::class_< SBInterpolatedKImage, bp::bases<SBProfile> > pySBInterpolatedKImage(
@@ -113,9 +95,17 @@ namespace galsim {
                 .def("dK", &SBInterpolatedKImage::dK)
                 .def("_cenIsSet", &SBInterpolatedKImage::cenIsSet)
                 .def("_getKData", &SBInterpolatedKImage::getKData)
+                .def(bp::init<const BaseImage<std::complex<double> > &,
+                              double, double,
+                              boost::shared_ptr<Interpolant>,
+                              boost::shared_ptr<GSParams> >(
+                                  (bp::arg("kimage"),
+                                   bp::arg("dk"),
+                                   bp::arg("stepk"),
+                                   bp::arg("kInterp"),
+                                   bp::arg("gsparams")=bp::object())
+                     ))
                 ;
-            wrapTemplates<float>(pySBInterpolatedKImage);
-            wrapTemplates<double>(pySBInterpolatedKImage);
         }
 
     };

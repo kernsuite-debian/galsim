@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -52,25 +52,28 @@ namespace galsim {
         { return Position<double>(0., 0.); }
 
         double getFlux() const { return _flux; }
+        double maxSB() const { return _norm; }
 
         double getWidth() const { return _width; }
         double getHeight() const { return _height; }
 
         boost::shared_ptr<PhotonArray> shoot(int N, UniformDeviate ud) const;
 
-        // Override both for efficiency and to put in fractional edge values which
-        // don't happen with normal calls to xValue.
-        void fillXValue(tmv::MatrixView<double> val,
+        // Overrides for better efficiency
+        template <typename T>
+        void fillXImage(ImageView<T> im,
                         double x0, double dx, int izero,
                         double y0, double dy, int jzero) const;
-        void fillXValue(tmv::MatrixView<double> val,
+        template <typename T>
+        void fillXImage(ImageView<T> im,
                         double x0, double dx, double dxy,
                         double y0, double dy, double dyx) const;
-        // Overrides for better efficiency
-        void fillKValue(tmv::MatrixView<std::complex<double> > val,
+        template <typename T>
+        void fillKImage(ImageView<std::complex<T> > im,
                         double kx0, double dkx, int izero,
                         double ky0, double dky, int jzero) const;
-        void fillKValue(tmv::MatrixView<std::complex<double> > val,
+        template <typename T>
+        void fillKImage(ImageView<std::complex<T> > im,
                         double kx0, double dkx, double dkxy,
                         double ky0, double dky, double dkyx) const;
 
@@ -85,6 +88,39 @@ namespace galsim {
         double _ho2;
         double _wo2pi;
         double _ho2pi;
+
+        void doFillXImage(ImageView<double> im,
+                          double x0, double dx, int izero,
+                          double y0, double dy, int jzero) const
+        { fillXImage(im,x0,dx,izero,y0,dy,jzero); }
+        void doFillXImage(ImageView<double> im,
+                          double x0, double dx, double dxy,
+                          double y0, double dy, double dyx) const
+        { fillXImage(im,x0,dx,dxy,y0,dy,dyx); }
+        void doFillXImage(ImageView<float> im,
+                          double x0, double dx, int izero,
+                          double y0, double dy, int jzero) const
+        { fillXImage(im,x0,dx,izero,y0,dy,jzero); }
+        void doFillXImage(ImageView<float> im,
+                          double x0, double dx, double dxy,
+                          double y0, double dy, double dyx) const
+        { fillXImage(im,x0,dx,dxy,y0,dy,dyx); }
+        void doFillKImage(ImageView<std::complex<double> > im,
+                          double kx0, double dkx, int izero,
+                          double ky0, double dky, int jzero) const
+        { fillKImage(im,kx0,dkx,izero,ky0,dky,jzero); }
+        void doFillKImage(ImageView<std::complex<double> > im,
+                          double kx0, double dkx, double dkxy,
+                          double ky0, double dky, double dkyx) const
+        { fillKImage(im,kx0,dkx,dkxy,ky0,dky,dkyx); }
+        void doFillKImage(ImageView<std::complex<float> > im,
+                          double kx0, double dkx, int izero,
+                          double ky0, double dky, int jzero) const
+        { fillKImage(im,kx0,dkx,izero,ky0,dky,jzero); }
+        void doFillKImage(ImageView<std::complex<float> > im,
+                          double kx0, double dkx, double dkxy,
+                          double ky0, double dky, double dkyx) const
+        { fillKImage(im,kx0,dkx,dkxy,ky0,dky,dkyx); }
 
         // Copy constructor and op= are undefined.
         SBBoxImpl(const SBBoxImpl& rhs);
@@ -125,24 +161,27 @@ namespace galsim {
         { return Position<double>(0., 0.); }
 
         double getFlux() const { return _flux; }
+        double maxSB() const { return _norm; }
 
         double getRadius() const { return _r0; }
 
         boost::shared_ptr<PhotonArray> shoot(int N, UniformDeviate ud) const;
 
-        // Override both for efficiency and to put in fractional edge values which
-        // don't happen with normal calls to xValue.
-        void fillXValue(tmv::MatrixView<double> val,
+        // Overrides for better efficiency
+        template <typename T>
+        void fillXImage(ImageView<T> im,
                         double x0, double dx, int izero,
                         double y0, double dy, int jzero) const;
-        void fillXValue(tmv::MatrixView<double> val,
+        template <typename T>
+        void fillXImage(ImageView<T> im,
                         double x0, double dx, double dxy,
                         double y0, double dy, double dyx) const;
-        // Overrides for better efficiency
-        void fillKValue(tmv::MatrixView<std::complex<double> > val,
+        template <typename T>
+        void fillKImage(ImageView<std::complex<T> > im,
                         double kx0, double dkx, int izero,
                         double ky0, double dky, int jzero) const;
-        void fillKValue(tmv::MatrixView<std::complex<double> > val,
+        template <typename T>
+        void fillKImage(ImageView<std::complex<T> > im,
                         double kx0, double dkx, double dkxy,
                         double ky0, double dky, double dkyx) const;
 
@@ -156,6 +195,39 @@ namespace galsim {
 
         // A helper function that calculates kValue given (k r0)^2
         std::complex<double> kValue2(double kr0sq) const;
+
+        void doFillXImage(ImageView<double> im,
+                          double x0, double dx, int izero,
+                          double y0, double dy, int jzero) const
+        { fillXImage(im,x0,dx,izero,y0,dy,jzero); }
+        void doFillXImage(ImageView<double> im,
+                          double x0, double dx, double dxy,
+                          double y0, double dy, double dyx) const
+        { fillXImage(im,x0,dx,dxy,y0,dy,dyx); }
+        void doFillXImage(ImageView<float> im,
+                          double x0, double dx, int izero,
+                          double y0, double dy, int jzero) const
+        { fillXImage(im,x0,dx,izero,y0,dy,jzero); }
+        void doFillXImage(ImageView<float> im,
+                          double x0, double dx, double dxy,
+                          double y0, double dy, double dyx) const
+        { fillXImage(im,x0,dx,dxy,y0,dy,dyx); }
+        void doFillKImage(ImageView<std::complex<double> > im,
+                          double kx0, double dkx, int izero,
+                          double ky0, double dky, int jzero) const
+        { fillKImage(im,kx0,dkx,izero,ky0,dky,jzero); }
+        void doFillKImage(ImageView<std::complex<double> > im,
+                          double kx0, double dkx, double dkxy,
+                          double ky0, double dky, double dkyx) const
+        { fillKImage(im,kx0,dkx,dkxy,ky0,dky,dkyx); }
+        void doFillKImage(ImageView<std::complex<float> > im,
+                          double kx0, double dkx, int izero,
+                          double ky0, double dky, int jzero) const
+        { fillKImage(im,kx0,dkx,izero,ky0,dky,jzero); }
+        void doFillKImage(ImageView<std::complex<float> > im,
+                          double kx0, double dkx, double dkxy,
+                          double ky0, double dky, double dkyx) const
+        { fillKImage(im,kx0,dkx,dkxy,ky0,dky,dkyx); }
 
         // Copy constructor and op= are undefined.
         SBTopHatImpl(const SBTopHatImpl& rhs);

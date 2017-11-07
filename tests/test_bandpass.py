@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -40,6 +40,8 @@ def test_Bandpass_basic():
     try:
         # Cannot initialize bandpass without wave_type:
         np.testing.assert_raises(TypeError, galsim.Bandpass, throughput=lambda x:x)
+        # eval-str must return a Real
+        np.testing.assert_raises(ValueError, galsim.Bandpass, throughput="'spam'", wave_type='A')
     except ImportError:
         print('The assert_raises tests require nose')
 
@@ -49,6 +51,9 @@ def test_Bandpass_basic():
         galsim.Bandpass(throughput='wave/1000', wave_type='nm', blue_limit=400, red_limit=550),
         galsim.Bandpass(throughput='wave/10000', wave_type='A', blue_limit=4000, red_limit=5500),
         galsim.Bandpass('wave/1000', 'nanometers', 400, 550, 30.),
+        galsim.Bandpass('wave/np.sqrt(1.e6)', 'nm', 400, 550, 30.),
+        galsim.Bandpass('wave/numpy.sqrt(1.e6)', 'nm', 400, 550, 30.),
+        galsim.Bandpass('wave/math.sqrt(1.e6)', 'nm', 400, 550, 30.),
         galsim.Bandpass(galsim.LookupTable([400,550], [0.4, 0.55], interpolant='linear'),
                         wave_type='nm'),
         galsim.Bandpass(galsim.LookupTable([4000,5500], [0.4, 0.55], interpolant='linear'),
@@ -258,19 +263,11 @@ def test_ne():
            galsim.Bandpass(throughput=lt, wave_type='nm'),
            galsim.Bandpass(throughput=lt, wave_type='A'),
            galsim.Bandpass(throughput=lt, wave_type='nm', zeropoint=10.0),
-           galsim.Bandpass(throughput=lt,
-                           wave_type='nm').withZeropoint('AB', effective_diameter=1.0, exptime=1.0),
-           galsim.Bandpass(throughput=lt,
-                           wave_type='nm').withZeropoint('AB', effective_diameter=1.0, exptime=2.0),
-           galsim.Bandpass(throughput=lt,
-                           wave_type='nm').withZeropoint('AB', effective_diameter=2.0, exptime=1.0),
-           galsim.Bandpass(throughput=lt,
-                           wave_type='nm').withZeropoint('ST', effective_diameter=1.0, exptime=1.0),
-           galsim.Bandpass(throughput=lt,
-                           wave_type='nm').withZeropoint('Vega', effective_diameter=1.0,
-                                                        exptime=1.0),
-           galsim.Bandpass(throughput=lt,
-                           wave_type='nm').withZeropoint(sed, effective_diameter=1.0, exptime=1.0)]
+           galsim.Bandpass(throughput=lt, wave_type='nm').withZeropoint('AB'),
+           galsim.Bandpass(throughput=lt, wave_type='nm').withZeropoint('ST'),
+           galsim.Bandpass(throughput=lt, wave_type='nm').withZeropoint('Vega'),
+           galsim.Bandpass(throughput=lt, wave_type='nm').withZeropoint(100.0),
+           galsim.Bandpass(throughput=lt, wave_type='nm').withZeropoint(sed)]
     all_obj_diff(bps)
 
 
@@ -306,7 +303,7 @@ def test_zp():
     """Check that the zero points are maintained in an appropriate way when thinning, truncating."""
     # Make a bandpass and set an AB zeropoint.
     bp = galsim.Bandpass(os.path.join(datapath, 'LSST_r.dat'), 'nm')
-    bp = bp.withZeropoint(zeropoint='AB', effective_diameter=6.4, exptime=15)
+    bp = bp.withZeropoint(zeropoint='AB')
     # Confirm that if we use the default thinning kwargs, then the zeropoint for the thinned
     # bandpass is the same (exactly) as the original.
     bp_th = bp.thin()

@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -29,9 +29,9 @@ namespace bp = boost::python;
 
 namespace galsim {
 
-    struct PySBAiry 
+    struct PySBAiry
     {
-        static void wrap() 
+        static void wrap()
         {
             bp::class_<SBAiry,bp::bases<SBProfile> >("SBAiry", bp::no_init)
                 .def(bp::init<double,double,double,boost::shared_ptr<GSParams> >(
@@ -46,7 +46,7 @@ namespace galsim {
         }
     };
 
-    void pyExportSBAiry() 
+    void pyExportSBAiry()
     {
         PySBAiry::wrap();
     }

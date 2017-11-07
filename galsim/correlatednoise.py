@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -21,8 +21,6 @@ Python layer documentation and functions for handling correlated noise in GalSim
 
 import numpy as np
 import galsim
-from . import base
-from . import utilities
 
 def whitenNoise(self, noise):
     # This will be inserted into the Image class as a method.  So self = image.
@@ -79,7 +77,7 @@ class _BaseCorrelatedNoise(object):
         if rng is not None and not isinstance(rng, galsim.BaseDeviate):
             raise TypeError(
                 "Supplied rng argument not a galsim.BaseDeviate or derived class instance.")
-        if not isinstance(gsobject, base.GSObject):
+        if not isinstance(gsobject, galsim.GSObject):
             raise TypeError(
                 "Supplied gsobject argument not a galsim.GSObject or derived class instance.")
 
@@ -110,16 +108,16 @@ class _BaseCorrelatedNoise(object):
     # Make "+" work in the intuitive sense (variances being additive, correlation functions add as
     # you would expect)
     def __add__(self, other):
-        if self.wcs != other.wcs:
+        if not galsim.wcs.compatible(self.wcs, other.wcs):
             import warnings
-            warnings.warn("Adding two CorrelatedNoise objects with different WCS functions.\n"+
+            warnings.warn("Adding two CorrelatedNoise objects with incompatible WCS functions.\n"+
                           "The result will have the WCS of the first object.")
         return _BaseCorrelatedNoise(self.rng, self._profile + other._profile, self.wcs)
 
     def __sub__(self, other):
-        if self.wcs != other.wcs:
+        if not galsim.wcs.compatible(self.wcs, other.wcs):
             import warnings
-            warnings.warn("Subtracting two CorrelatedNoise objects with different WCS functions.\n"+
+            warnings.warn("Subtracting two CorrelatedNoise objects with incompatible WCS functions.\n"+
                           "The result will have the WCS of the first object.")
         return _BaseCorrelatedNoise(self.rng, self._profile - other._profile, self.wcs)
 
@@ -140,7 +138,7 @@ class _BaseCorrelatedNoise(object):
         """
         if rng is None:
             rng = self.rng
-        return _BaseCorrelatedNoise(rng, self._profile.copy(), self.wcs)
+        return _BaseCorrelatedNoise(rng, self._profile, self.wcs)
 
     def __repr__(self):
         return "galsim.correlatednoise._BaseCorrelatedNoise(%r,%r,%r)"%(
@@ -171,8 +169,8 @@ class _BaseCorrelatedNoise(object):
         On output the Image instance `image` will have been given additional noise according to the
         given CorrelatedNoise instance `correlated_noise`.  Normally, `image.scale` is used to
         determine the input Image pixel separation, and if `image.scale <= 0` a pixel scale of 1 is
-        assumed.  If the image has a non-trivial WCS, it must at least be "uniform", i.e.,
-        `image.wcs.isUniform() == True`.
+        assumed.  If the image has a non-uniform WCS, the local uniform approximation at the center
+        of the image will be used.
 
         Note that the correlations defined in a correlated_noise object are defined in terms of
         world coordinates (i.e. typically arcsec on the sky).  Some care is thus required if you
@@ -222,14 +220,10 @@ class _BaseCorrelatedNoise(object):
         # Set profile_for_stored for next time.
         self._profile_for_stored = self._profile
 
-        if image.wcs is not None and not image.wcs.isUniform():
-            raise NotImplementedError("Sorry, correlated noise cannot be applied to an "+
-                                      "image with a non-uniform WCS.")
-
         if image.wcs is None:
             wcs = self.wcs
         else:
-            wcs = image.wcs
+            wcs = image.wcs.local(image.trueCenter())
 
         # Then retrieve or redraw the sqrt(power spectrum) needed for making the noise field
         rootps = self._get_update_rootps(image.array.shape, wcs)
@@ -270,8 +264,8 @@ class _BaseCorrelatedNoise(object):
         is the case for the final noise to be uncorrelated.
 
         Normally, `image.scale` is used to determine the input Image pixel separation, and if
-        `image.wcs` is None, it will use the wcs of the noise.  If the image has a non-trivial WCS,
-        it must at least be "uniform", i.e., `image.wcs.isUniform() == True`.
+        `image.wcs` is None, it will use the wcs of the noise.  If the image has a non-uniform WCS,
+        the local uniform approximation at the center of the image will be used.
 
         If you are interested in a theoretical calculation of the variance in the final noise field
         after whitening, the whitenImage() method in fact returns this variance.  For example:
@@ -326,7 +320,7 @@ class _BaseCorrelatedNoise(object):
         if image.wcs is None:
             wcs = self.wcs
         else:
-            wcs = image.wcs
+            wcs = image.wcs.local(image.trueCenter())
 
         # Then retrieve or redraw the sqrt(power spectrum) needed for making the whitening noise,
         # and the total variance of the combination
@@ -369,8 +363,8 @@ class _BaseCorrelatedNoise(object):
         is the case for the final noise correlation function to be symmetric in the requested way.
 
         Normally, `image.scale` is used to determine the input Image pixel separation, and if
-        `image.wcs` is None, it will use the wcs of the noise.  If the image has a non-trivial WCS,
-        it must at least be "uniform", i.e., `image.wcs.isUniform() == True`.
+        `image.wcs` is None, it will use the wcs of the noise.  If the image has a non-uniform WCS,
+        the local uniform approximation at the center of the image will be used.
 
         If you are interested in a theoretical calculation of the variance in the final noise field
         after imposing symmetry, the symmetrizeImage() method in fact returns this variance.
@@ -418,7 +412,7 @@ class _BaseCorrelatedNoise(object):
         if image.wcs is None:
             wcs = self.wcs
         else:
-            wcs = image.wcs
+            wcs = image.wcs.local(image.trueCenter())
 
         # Then retrieve or redraw the sqrt(power spectrum) needed for making the symmetrizing noise,
         # and the total variance of the combination.
@@ -620,8 +614,8 @@ class _BaseCorrelatedNoise(object):
         conv = galsim.Convolve([self._profile, galsim.AutoCorrelate(gsobject)], gsparams=gsparams)
         return _BaseCorrelatedNoise(self.rng, conv, self.wcs)
 
-    def drawImage(self, image=None, scale=None, wcs=None, dtype=None, wmult=1., add_to_image=False,
-                  dx=None):
+    def drawImage(self, image=None, scale=None, wcs=None, dtype=None, add_to_image=False,
+                  dx=None, wmult=1.0):
         """A method for drawing profiles storing correlation functions.
 
         This is a mild reimplementation of the drawImage() method for GSObjects.  The `method` is
@@ -644,10 +638,6 @@ class _BaseCorrelatedNoise(object):
         @param dtype        The data type to use for an automatically constructed image.  Only
                             valid if `image` is None. [default: None, which means to use
                             numpy.float32]
-        @param wmult        A multiplicative factor by which to enlarge (in each direction) the
-                            default automatically calculated FFT grid size used for any
-                            intermediate calculations in Fourier space.  See the description
-                            in GSObject.drawImage() for more details. [default: 1]
         @param add_to_image Whether to add flux to the existing image rather than clear out
                             anything in the image before drawing.
                             Note: This requires that `image` be provided and that it have defined
@@ -655,17 +645,18 @@ class _BaseCorrelatedNoise(object):
 
         @returns an Image of the correlation function.
         """
-        # Check for obsolete dx parameter
-        if dx is not None and scale is None:
+        # Check for obsolete parameters
+        if dx is not None and scale is None: # pragma: no cover
             from galsim.deprecated import depr
             depr('dx', 1.1, 'scale')
             scale = dx
+        # Let self._profile.drawImage raise the deprecation warning for wmult.
 
         wcs = self._profile._determine_wcs(scale, wcs, image, self.wcs)
 
         return self._profile.drawImage(
-            image=image, wcs=wcs, dtype=dtype, method='sb', gain=1., wmult=wmult,
-            add_to_image=add_to_image, use_true_center=False)
+            image=image, wcs=wcs, dtype=dtype, method='sb', gain=1.,
+            add_to_image=add_to_image, use_true_center=False, wmult=wmult)
 
     def _get_update_rootps(self, shape, wcs):
         """Internal utility function for querying the `rootps` cache, used by applyTo(),
@@ -860,7 +851,7 @@ class _BaseCorrelatedNoise(object):
                 # For later ones, rotate by 2pi/order, and draw it back into a new image.
                 tmp_obj = tmp_obj.rotate(2.*np.pi*galsim.radians/order)
                 tmp_im = galsim.Image(tmp_arr.shape[1], tmp_arr.shape[0], scale=1)
-                tmp_obj.drawImage(tmp_im, scale=1, method='no_pixel')
+                tmp_obj.drawImage(tmp_im, scale=1, method='sb')
                 final_arr[tmp_im.array > final_arr] = tmp_im.array[tmp_im.array > final_arr]
 
         # Now simply take the halfcomplex, compact stored part that we are interested in,
@@ -1066,7 +1057,7 @@ class CorrelatedNoise(_BaseCorrelatedNoise):
     A number of methods familiar from GSObject instances have also been implemented directly as
     `cn` methods, so that the following commands are all legal:
 
-        >>> image = cn.drawImage(im, scale, wmult=4)
+        >>> image = cn.drawImage(im, scale)
         >>> cn = cn.shear(s)
         >>> cn = cn.expand(m)
         >>> cn = cn.rotate(theta * galsim.degrees)
@@ -1118,7 +1109,7 @@ class CorrelatedNoise(_BaseCorrelatedNoise):
     def __init__(self, image, rng=None, scale=None, wcs=None, x_interpolant=None,
         correct_periodicity=True, subtract_mean=False, gsparams=None, dx=None):
         # Check for obsolete dx parameter
-        if dx is not None and scale==0.:
+        if dx is not None and scale==0.: # pragma: no cover
             from galsim.deprecated import depr
             depr('dx', 1.1, 'scale')
             scale = dx
@@ -1152,7 +1143,7 @@ class CorrelatedNoise(_BaseCorrelatedNoise):
             store_rootps = False
 
         # Roll CF array to put the centre in image centre.  Remember that numpy stores data [y,x]
-        cf_array_prelim = utilities.roll2d(
+        cf_array_prelim = galsim.utilities.roll2d(
             cf_array_prelim, (cf_array_prelim.shape[0] // 2, cf_array_prelim.shape[1] // 2))
 
         # The underlying C++ object is expecting the CF to be represented by an odd-dimensioned
@@ -1194,7 +1185,7 @@ class CorrelatedNoise(_BaseCorrelatedNoise):
         elif scale is not None:
             cf_image.scale = scale
         elif image is not None and image.wcs is not None:
-            cf_image.wcs = image.wcs
+            cf_image.wcs = image.wcs.local(image.trueCenter())
 
         # If wcs is still None at this point or is a PixelScale <= 0., use scale=1.
         if cf_image.wcs is None or (cf_image.wcs.isPixelScale() and cf_image.wcs.scale <= 0):
@@ -1204,7 +1195,7 @@ class CorrelatedNoise(_BaseCorrelatedNoise):
         if x_interpolant is None:
             x_interpolant = galsim.Linear(tol=1.e-4)
         else:
-            x_interpolant = utilities.convert_interpolant(x_interpolant)
+            x_interpolant = galsim.utilities.convert_interpolant(x_interpolant)
 
         # Then initialize...
         cf_object = galsim.InterpolatedImage(
@@ -1356,7 +1347,7 @@ def getCOSMOSNoise(file_name=None, rng=None, cosmos_scale=0.03, variance=0., x_i
     The FITS file `out.fits` should then contain an image of randomly-generated, COSMOS-like noise.
     """
     # Check for obsolete dx_cosmos parameter
-    if dx_cosmos is not None and cosmos_scale==0.03:
+    if dx_cosmos is not None and cosmos_scale==0.03: # pragma: no cover
         from galsim.deprecated import depr
         depr('dx_cosmos', 1.1, 'cosmos_scale')
         cosmos_scale = dx_cosmos
@@ -1369,7 +1360,9 @@ def getCOSMOSNoise(file_name=None, rng=None, cosmos_scale=0.03, variance=0., x_i
         raise IOError("The file '"+str(file_name)+"' does not exist.")
     try:
         cfimage = galsim.fits.read(file_name)
-    except Exception:
+    except KeyboardInterrupt:
+        raise
+    except: # pragma: no cover
         # Give a vaguely helpful warning, then raise the original exception for extra diagnostics
         import warnings
         warnings.warn(
@@ -1385,7 +1378,7 @@ def getCOSMOSNoise(file_name=None, rng=None, cosmos_scale=0.03, variance=0., x_i
     if x_interpolant is None:
         x_interpolant = galsim.Linear(tol=1.e-4)
     else:
-        x_interpolant = utilities.convert_interpolant(x_interpolant)
+        x_interpolant = galsim.utilities.convert_interpolant(x_interpolant)
 
     # Use this info to then generate a correlated noise model DIRECTLY: note this is non-standard
     # usage, but tolerated since we can be sure that the input cfimage is appropriately symmetric

@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -68,7 +68,7 @@ def Shapelet_setNM(self,N,m,re,im=0.):
     galsim.GSObject.__init__(self, galsim._galsim.SBShapelet(self.sigma, bvec))
 
 def Shapelet_fitImage(self, image, center=None, normalization='flux'):
-    """A deprecated method that is roughly equivalent to 
+    """A deprecated method that is roughly equivalent to
     self = galsim.FitShapelet(self.sigma, self.order, image)
     """
     depr('fitImage', 1.1, 'galsim.FitShapelet')

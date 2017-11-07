@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -110,7 +110,7 @@ class NFWHalo(object):
     Based on Matthias Bartelmann's libastro.
 
     The cosmology to use can be set either by providing a Cosmology instance as cosmo,
-    or by providing omega_m and/or omega_lam.  
+    or by providing omega_m and/or omega_lam.
     If only one of the latter is provided, the other is taken to be one minus that.
     If no cosmology parameters are set, a default Cosmology is constructed.
 
@@ -128,7 +128,7 @@ class NFWHalo(object):
     _single_params = []
     _takes_rng = False
 
-    def __init__(self, mass, conc, redshift, halo_pos=galsim.PositionD(0,0), 
+    def __init__(self, mass, conc, redshift, halo_pos=galsim.PositionD(0,0),
                  omega_m=None, omega_lam=None, cosmo=None):
         if omega_m is not None or omega_lam is not None:
             if cosmo is not None:
@@ -171,10 +171,10 @@ class NFWHalo(object):
         self.rs = R200/self.c
 
         # convert scale radius in arcsec
-        dl = self.cosmo.Da(self.z)*3000.; # in Mpc/h
+        dl = self.cosmo.Da(self.z)*3000. # in Mpc/h
         scale = self.rs / dl
-        arcsec2rad = 1./206265;
-        self.rs_arcsec = scale/arcsec2rad;
+        arcsec2rad = 1./206265
+        self.rs_arcsec = scale/arcsec2rad
 
     def __repr__(self):
         s = "galsim.NFWHalo(mass=%r, conc=%r, redshift=%r"%(self.M, self.c, self.z)
@@ -478,8 +478,8 @@ class NFWHalo(object):
         g = self.__gamma(r, ks)
         kappa = self.__kappa(r, ks)
 
-        g /= 1 - kappa
         mu = 1. / ( (1.-kappa)**2 - g**2 )
+        g /= 1 - kappa
         # Get the tangential shear (no x component)
         dx = pos_x - self.halo_pos.x
         dy = pos_y - self.halo_pos.y
@@ -502,5 +502,3 @@ class NFWHalo(object):
             return g1[0], g2[0], mu[0]
         else:
             return g1.tolist(), g2.tolist(), m.tolist()
-
-

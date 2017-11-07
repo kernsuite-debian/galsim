@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -32,7 +32,7 @@ import logging
 valid_output_types = {}
 
 
-def BuildFiles(nfiles, config, file_num=0, logger=None):
+def BuildFiles(nfiles, config, file_num=0, logger=None, except_abort=False):
     """
     Build a number of output files as specified in config.
 
@@ -40,17 +40,22 @@ def BuildFiles(nfiles, config, file_num=0, logger=None):
     @param config           A configuration dict.
     @param file_num         If given, the first file_num. [default: 0]
     @param logger           If given, a logger object to log progress. [default: None]
+    @param except_abort     Whether to abort processing when a file raises an exception (True)
+                            or just report errors and continue on (False). [default: False]
     """
+    logger = galsim.config.LoggerWrapper(logger)
     import time
     t1 = time.time()
+
+    # The next line relies on getting errors when the rng is undefined.  However, the default
+    # rng is None, which is a valid thing to construct a Deviate object from.  So for now,
+    # set the rng to object() to make sure we get errors where we are expecting to.
+    config['rng'] = object()
 
     # Process the input field for the first file.  Often there are "safe" input items
     # that won't need to be reprocessed each time.  So do them here once and keep them
     # in the config for all file_nums.  This is more important if nproc != 1.
-    galsim.config.ProcessInput(config, file_num=0, logger=logger, safe_only=True)
-
-    # We'll want a pristine version later to give to the workers.
-    orig_config = galsim.config.CopyConfig(config)
+    galsim.config.ProcessInput(config, logger=logger, safe_only=True)
 
     jobs = []  # Will be a list of the kwargs to use for each job
     info = []  # Will be a list of (file_num, file_name) correspongind to each jobs.
@@ -69,18 +74,20 @@ def BuildFiles(nfiles, config, file_num=0, logger=None):
         nproc = galsim.config.ParseValue(output, 'nproc', config, int)[0]
         # Update this in case the config value is -1
         nproc = galsim.config.UpdateNProc(nproc, nfiles, config, logger)
+        # We'll want a pristine version later to give to the workers.
+        orig_config = galsim.config.CopyConfig(config)
     else:
         nproc = 1
+        orig_config = config
 
     for k in range(nfiles + first_file_num):
-        SetupConfigFileNum(config, file_num, image_num, obj_num)
-        seed = galsim.config.SetupConfigRNG(config)
+        SetupConfigFileNum(config, file_num, image_num, obj_num, logger)
+
+        # Process the input fields that might be relevant at file scope:
+        galsim.config.ProcessInput(config, logger=logger, file_scope_only=True)
 
         # Get the number of objects in each image for this file.
         nobj = GetNObjForFile(config,file_num,image_num)
-
-        # Process the input fields that might be relevant at file scope:
-        galsim.config.ProcessInput(config, file_num=file_num, logger=logger, file_scope_only=True)
 
         # The kwargs to pass to BuildFile
         kwargs = {
@@ -116,12 +123,15 @@ def BuildFiles(nfiles, config, file_num=0, logger=None):
             logger.warning(s0 + 'File %d = %s: time = %f sec', file_num, file_name, t)
 
     def except_func(logger, proc, k, e, tr):
-        if logger:
-            file_num, file_name = info[k]
-            if proc is None: s0 = ''
-            else: s0 = '%s: '%proc
-            logger.error(s0 + 'Exception caught for file %d = %s', file_num, file_name)
-            logger.error('%s',tr)
+        file_num, file_name = info[k]
+        if proc is None: s0 = ''
+        else: s0 = '%s: '%proc
+        logger.error(s0 + 'Exception caught for file %d = %s', file_num, file_name)
+        if except_abort:
+            logger.debug('%s',tr)
+            logger.error('File %s not written.',file_name)
+        else:
+            logger.warning('%s',tr)
             logger.error('File %s not written! Continuing on...',file_name)
 
     # Convert to the tasks structure we need for MultiProcess
@@ -131,27 +141,25 @@ def BuildFiles(nfiles, config, file_num=0, logger=None):
     results = galsim.config.MultiProcess(nproc, orig_config, BuildFile, tasks, 'file',
                                          logger, done_func = done_func,
                                          except_func = except_func,
-                                         except_abort = False)
+                                         except_abort = except_abort)
     t2 = time.time()
 
-    if not results:
+    if not results:  # pragma: no cover
         nfiles_written = 0
     else:
         fnames, times = zip(*results)
         nfiles_written = sum([ t!=0 for t in times])
 
-    if nfiles_written == 0:
-        if logger:
-            logger.error('No files were written.  All were either skipped or had errors.')
+    if nfiles_written == 0:  # pragma: no cover
+        logger.error('No files were written.  All were either skipped or had errors.')
     else:
-        if logger:
-            if nfiles_written > 1 and nproc != 1:
-                logger.warning('Total time for %d files with %d processes = %f sec',
-                               nfiles_written,nproc,t2-t1)
-            logger.warning('Done building files')
+        if nfiles_written > 1 and nproc != 1:
+            logger.warning('Total time for %d files with %d processes = %f sec',
+                           nfiles_written,nproc,t2-t1)
+        logger.warning('Done building files')
 
 
-output_ignore = [ 'file_name', 'dir', 'nfiles', 'nproc', 'skip', 'noclobber', 'retry_io' ]
+output_ignore = [ 'nproc', 'skip', 'noclobber', 'retry_io' ]
 
 def BuildFile(config, file_num=0, image_num=0, obj_num=0, logger=None):
     """
@@ -166,13 +174,11 @@ def BuildFile(config, file_num=0, image_num=0, obj_num=0, logger=None):
     @returns a tuple of the file name and the time taken to build file: (file_name, t)
     Note: t==0 indicates that this file was skipped.
     """
+    logger = galsim.config.LoggerWrapper(logger)
     import time
     t1 = time.time()
 
-    SetupConfigFileNum(config,file_num,image_num,obj_num)
-    seed = galsim.config.SetupConfigRNG(config)
-    if logger:
-        logger.debug('file %d: seed = %d',file_num,seed)
+    SetupConfigFileNum(config, file_num, image_num, obj_num, logger)
 
     # Put these values in the config dict so we won't have to run them again later if
     # we need them.  e.g. ExtraOuput processing uses these.
@@ -184,13 +190,12 @@ def BuildFile(config, file_num=0, image_num=0, obj_num=0, logger=None):
     output = config['output']
     output_type = output['type']
 
-    if logger:
-        logger.debug('file %d: Build File with type=%s to build %d images, starting with %d',
-                      file_num,output_type,nimages,image_num)
+    logger.debug('file %d: BuildFile with type=%s to build %d images, starting with %d',
+                 file_num,output_type,nimages,image_num)
 
     # Make sure the inputs and extra outputs are set up properly.
-    galsim.config.ProcessInput(config, file_num=file_num, logger=logger)
-    galsim.config.SetupExtraOutput(config, file_num=file_num, logger=logger)
+    galsim.config.ProcessInput(config, logger=logger)
+    galsim.config.SetupExtraOutput(config, logger=logger)
 
     builder = valid_output_types[output_type]
 
@@ -199,30 +204,34 @@ def BuildFile(config, file_num=0, image_num=0, obj_num=0, logger=None):
 
     # Check if we ought to skip this file
     if 'skip' in output and galsim.config.ParseValue(output, 'skip', config, bool)[0]:
-        if logger:
-            logger.warning('Skipping file %d = %s because output.skip = True',file_num,file_name)
-        t2 = time.time()
-        return file_name, 0
+        logger.warning('Skipping file %d = %s because output.skip = True',file_num,file_name)
+        return file_name, 0  # Note: time=0 is the indicator that a file was skipped.
     if ('noclobber' in output
         and galsim.config.ParseValue(output, 'noclobber', config, bool)[0]
         and os.path.isfile(file_name)):
-        if logger:
-            logger.warning('Skipping file %d = %s because output.noclobber = True' +
-                           ' and file exists',file_num,file_name)
-        t2 = time.time()
+        logger.warning('Skipping file %d = %s because output.noclobber = True' +
+                       ' and file exists',file_num,file_name)
         return file_name, 0
 
-    if logger:
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug('file %d: file_name = %s',file_num,file_name)
-        else:
-            logger.warning('Start file %d = %s', file_num, file_name)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug('file %d: file_name = %s',file_num,file_name)
+    else:
+        logger.warning('Start file %d = %s', file_num, file_name)
 
     ignore = output_ignore + list(galsim.config.valid_extra_outputs)
     data = builder.buildImages(output, config, file_num, image_num, obj_num, ignore, logger)
 
-    if builder.canAddHdus():
-        data = galsim.config.AddExtraOutputHDUs(config,data,logger)
+    # If any images came back as None, then remove them, since they cannot be written.
+    data = [ im for im in data if im is not None ]
+
+    if len(data) == 0:
+        logger.warning('Skipping file %d = %s because all images were None',file_num,file_name)
+        return file_name, 0
+
+    # Go back to file_num as the default index_key.
+    config['index_key'] = 'file_num'
+
+    data = builder.addExtraOutputHDUs(config, data, logger)
 
     if 'retry_io' in output:
         ntries = galsim.config.ParseValue(output,'retry_io',config,int)[0]
@@ -231,15 +240,30 @@ def BuildFile(config, file_num=0, image_num=0, obj_num=0, logger=None):
     else:
         ntries = 1
 
-    args = (data, file_name)
+    args = (data, file_name, output, config, logger)
     RetryIO(builder.writeFile, args, ntries, file_name, logger)
-    if logger:
-        logger.debug('file %d: Wrote %s to file %r',file_num,output_type,file_name)
+    logger.debug('file %d: Wrote %s to file %r',file_num,output_type,file_name)
 
-    galsim.config.WriteExtraOutputs(config,data,logger)
+    builder.writeExtraOutputs(config, data, logger)
+
     t2 = time.time()
 
     return file_name, t2-t1
+
+def GetNFiles(config):
+    """
+    Get the number of files that will be made, based on the information in the config dict.
+
+    @param config           The configuration dict.
+
+    @returns the number of files
+    """
+    output = config.get('output',{})
+    output_type = output.get('type','Fits')
+    if output_type not in valid_output_types:
+        raise AttributeError("Invalid output.type=%s."%output_type)
+    return valid_output_types[output_type].getNFiles(output, config)
+
 
 def GetNImagesForFile(config, file_num):
     """
@@ -251,12 +275,10 @@ def GetNImagesForFile(config, file_num):
 
     @returns the number of images
     """
-    output = config['output']
-    if 'type' in config['output']:
-        output_type = output['type']
-    else:
-        output_type = 'Fits'
-
+    output = config.get('output',{})
+    output_type = output.get('type','Fits')
+    if output_type not in valid_output_types:
+        raise AttributeError("Invalid output.type=%s."%output_type)
     return valid_output_types[output_type].getNImages(output, config, file_num)
 
 
@@ -271,17 +293,14 @@ def GetNObjForFile(config, file_num, image_num):
 
     @returns a list of the number of objects in each image [ nobj0, nobj1, nobj2, ... ]
     """
-    nimages = GetNImagesForFile(config, file_num)
-
-    try :
-        nobj = [ galsim.config.GetNObjForImage(config, image_num+j) for j in range(nimages) ]
-    except ValueError : # (This may be raised if something needs the input stuff)
-        galsim.config.ProcessInput(config, file_num=file_num)
-        nobj = [ galsim.config.GetNObjForImage(config, image_num+j) for j in range(nimages) ]
-    return nobj
+    output = config.get('output',{})
+    output_type = output.get('type','Fits')
+    if output_type not in valid_output_types:
+        raise AttributeError("Invalid output.type=%s."%output_type)
+    return valid_output_types[output_type].getNObjPerImage(output, config, file_num, image_num)
 
 
-def SetupConfigFileNum(config, file_num, image_num, obj_num):
+def SetupConfigFileNum(config, file_num, image_num, obj_num, logger=None):
     """Do the basic setup of the config dict at the file processing level.
 
     Includes:
@@ -300,15 +319,12 @@ def SetupConfigFileNum(config, file_num, image_num, obj_num):
                             start_obj_num items in the config dict.)
     @param image_num        The current image_num.
     @param obj_num          The current obj_num.
+    @param logger           If given, a logger object to log progress. [default: None]
     """
-    if file_num is None:
-        if 'file_num' not in config: config['file_num'] = 0
-        if 'start_obj_num' not in config: config['start_obj_num'] = obj_num
-        if 'start_image_num' not in config: config['start_image_num'] = image_num
-    else:
-        config['file_num'] = file_num
-        config['start_obj_num'] = obj_num
-        config['start_image_num'] = image_num
+    logger = galsim.config.LoggerWrapper(logger)
+    config['file_num'] = file_num
+    config['start_obj_num'] = obj_num
+    config['start_image_num'] = image_num
     config['image_num'] = image_num
     config['obj_num'] = obj_num
     config['index_key'] = 'file_num'
@@ -323,6 +339,9 @@ def SetupConfigFileNum(config, file_num, image_num, obj_num):
     if output_type not in valid_output_types:
         raise AttributeError("Invalid output.type=%s."%output_type)
 
+    seed = galsim.config.SetupConfigRNG(config, logger=logger)
+    logger.debug('file %d: seed = %d',file_num,seed)
+
 
 def SetDefaultExt(config, default_ext):
     """Set a default ext in a config 'file_name' field if appropriate.
@@ -331,32 +350,62 @@ def SetDefaultExt(config, default_ext):
                             a default 'ext' value.
     @param default_ext      The default extension to set in the config dict if one is not set.
     """
-    if default_ext is not None:
-        if ( isinstance(config,dict) and 'type' in config and
-            config['type'] == 'NumberedFile' and 'ext' not in config ):
-            config['ext'] = default_ext
+    if ( isinstance(config,dict) and 'type' in config and
+        config['type'] == 'NumberedFile' and 'ext' not in config ):
+        config['ext'] = default_ext
 
 
 # A helper function to retry io commands
+_sleep_mult = 1  # 1 second normally, but make it a variable, so I can change it when unit testing.
 def RetryIO(func, args, ntries, file_name, logger):
-    for itry in range(ntries):
+    itry = 0
+    while True:
+        itry += 1
         try:
             ret = func(*args)
         except IOError as e:
-            if itry == ntries-1:
+            if itry == ntries:
                 # Then this was the last try.  Just re-raise the exception.
                 raise
             else:
-                if logger:
-                    logger.warning('File %s: Caught IOError: %s',file_name,str(e))
-                    logger.warning('This is try %d/%d, so sleep for %d sec and try again.',
-                                   itry+1,ntries,itry+1)
+                logger.warning('File %s: Caught IOError: %s',file_name,str(e))
+                logger.warning('This is try %d/%d, so sleep for %d sec and try again.',
+                               itry,ntries,itry)
                 import time
-                time.sleep(itry+1)
+                time.sleep(itry * _sleep_mult)
                 continue
         else:
             break
     return ret
+
+
+def EnsureDir(target):
+    """
+    Make sure the directory for the target location exists, watching for a race condition
+
+    In particular check if the OS reported that the directory already exists when running
+    makedirs, which can happen if another process creates it before this one can
+    """
+
+    _ERR_FILE_EXISTS=17
+    dir = os.path.dirname(target)
+    if dir == '': return
+
+    exists = os.path.exists(dir)
+    if not exists:
+        try:
+            os.makedirs(dir)
+        except OSError as err:
+            # check if the file now exists, which can happen if some other
+            # process created the directory between the os.path.exists call
+            # above and the time of the makedirs attempt.  This is OK
+            if err.errno != _ERR_FILE_EXISTS:
+                raise err
+
+    elif exists and not os.path.isdir(dir):
+        raise IOError("tried to make directory '%s' "
+                      "but a non-directory file of that "
+                      "name already exists" % dir)
 
 
 class OutputBuilder(object):
@@ -377,11 +426,6 @@ class OutputBuilder(object):
 
         @param config           The configuration dict for the output type.
         @param base             The base configuration dict.
-        @param image_num        The current image_num.
-        @param obj_num          The current obj_num.
-        @param ignore           A list of parameters that are allowed to be in config['output']
-                                that we can ignore here.  i.e. it won't be an error if these
-                                parameters are present.
         @param logger           If given, a logger object to log progress.
 
         @returns the filename to build.
@@ -398,10 +442,9 @@ class OutputBuilder(object):
         # Prepend a dir to the beginning of the filename if requested.
         if 'dir' in config:
             dir = galsim.config.ParseValue(config, 'dir', base, str)[0]
-            if dir:
-                _makedirs_check(dir)
-
             file_name = os.path.join(dir,file_name)
+
+        EnsureDir(file_name)
 
         return file_name
 
@@ -424,10 +467,26 @@ class OutputBuilder(object):
         """
         # There are no extra parameters to get, so just check that there are no invalid parameters
         # in the config dict.
+        ignore += [ 'file_name', 'dir', 'nfiles' ]
         galsim.config.CheckAllParams(config, ignore=ignore)
 
         image = galsim.config.BuildImage(base, image_num, obj_num, logger=logger)
         return [ image ]
+
+    def getNFiles(self, config, base):
+        """Returns the number of files to be built.
+
+        In the base class, this is just output.nfiles.
+
+        @param config           The configuration dict for the output field.
+        @param base             The base configuration dict.
+
+        @returns the number of files to build.
+        """
+        if 'nfiles' in config:
+            return galsim.config.ParseValue(config, 'nfiles', base, int)[0]
+        else:
+            return 1
 
     def getNImages(self, config, base, file_num):
         """Returns the number of images to be built.
@@ -442,15 +501,23 @@ class OutputBuilder(object):
         """
         return 1
 
-    def writeFile(self, data, file_name):
-        """Write the data to a file.
-
-        @param data             The data to write.  Usually a list of images returned by
-                                buildImages, but possibly with extra HDUs tacked onto the end
-                                from the extra output items.
-        @param file_name        The file_name to write to.
+    def getNObjPerImage(self, config, base, file_num, image_num):
         """
-        galsim.fits.writeMulti(data,file_name)
+        Get the number of objects that will be made for each image built as part of the file
+        file_num, which starts at image number image_num, based on the information in the config
+        dict.
+
+        @param config           The configuration dict.
+        @param base             The base configuration dict.
+        @param file_num         The current file number.
+        @param image_num        The current image number (the first one for this file).
+
+        @returns a list of the number of objects in each image [ nobj0, nobj1, nobj2, ... ]
+        """
+        nimages = self.getNImages(config, base, file_num)
+        nobj = [ galsim.config.GetNObjForImage(base, image_num+j) for j in range(nimages) ]
+        base['image_num'] = image_num  # Make sure this is set back to current image num.
+        return nobj
 
     def canAddHdus(self):
         """Returns whether it is permissible to add extra HDUs to the end of the data list.
@@ -458,6 +525,43 @@ class OutputBuilder(object):
         In the base class, this returns True.
         """
         return True
+
+    def addExtraOutputHDUs(self, config, data, logger):
+        """If appropriate, add any extra output items that go into HDUs to the data list.
+
+        @param config           The configuration dict for the output field.
+        @param data             The data to write.  Usually a list of images.
+        @param logger           If given, a logger object to log progress.
+
+        @returns data (possibly updated with additional items)
+        """
+        if self.canAddHdus():
+            data = galsim.config.AddExtraOutputHDUs(config, data, logger)
+        else:
+            galsim.config.CheckNoExtraOutputHDUs(config, config['output']['type'], logger)
+        return data
+
+    def writeFile(self, data, file_name, config, base, logger):
+        """Write the data to a file.
+
+        @param data             The data to write.  Usually a list of images returned by
+                                buildImages, but possibly with extra HDUs tacked onto the end
+                                from the extra output items.
+        @param file_name        The file_name to write to.
+        @param config           The configuration dict for the output field.
+        @param base             The base configuration dict.
+        @param logger           If given, a logger object to log progress.
+        """
+        galsim.fits.writeMulti(data,file_name)
+
+    def writeExtraOutputs(self, config, data, logger):
+        """If appropriate, write any extra output items that write their own files.
+
+        @param config           The configuration dict for the output field.
+        @param data             The data to write.  Usually a list of images.
+        @param logger           If given, a logger object to log progress.
+        """
+        galsim.config.WriteExtraOutputs(config, data, logger)
 
 
 def RegisterOutputType(output_type, builder):
@@ -472,33 +576,4 @@ def RegisterOutputType(output_type, builder):
 
 # The base class is also the builder for type = Fits.
 RegisterOutputType('Fits', OutputBuilder())
-
-
-_ERR_FILE_EXISTS=17
-def _makedirs_check(dir):
-    """
-    try to make the directory, watching for a race condition
-
-    In particular check if the OS reported that the directory already exists
-    when running makedirs, which can happen if another process creates it
-    before this one can
-    """
-
-    exists = os.path.exists(dir)
-
-    if not exists:
-        try:
-            os.makedirs(dir)
-        except OSError as err:
-            # check if the file now exists, which can happen if some other
-            # process created the directory between the os.path.exists call
-            # above and the time of the makedirs attempt.  This is OK
-            if err.errno != _ERR_FILE_EXISTS:
-                raise err
-
-    elif exists and not os.path.isdir(dir):
-        raise IOError("tried to make directory '%s' "
-                      "but a non-directory file of that "
-                      "name already exists" % dir)
-
 

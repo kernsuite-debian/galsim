@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -30,7 +30,7 @@ namespace bp = boost::python;
 
 namespace galsim {
 
-    struct PySBTransform 
+    struct PySBTransform
     {
         static bp::handle<> getJac(const SBTransform& self) {
             static npy_intp dim[1] = {4};
@@ -46,9 +46,9 @@ namespace galsim {
             return bp::handle<>(r2);
         }
 
-        static void wrap() 
+        static void wrap()
         {
-            static char const * doc = 
+            static char const * doc =
                 "SBTransform is an affine transformation of another SBProfile.\n"
                 "Origin of original shape will now appear at x0.\n"
                 "Flux is NOT conserved in transformation - SB is preserved."
@@ -74,7 +74,7 @@ namespace galsim {
 
     };
 
-    void pyExportSBTransform() 
+    void pyExportSBTransform()
     {
         PySBTransform::wrap();
     }

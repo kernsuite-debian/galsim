@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -237,6 +237,15 @@ namespace galsim {
          * BaseDeviate objects as a direct way to define a common seed for other Deviates.
          */
         double operator()() { return _val(); }
+
+        /**
+         * @brief Draw N new random numbers from the distribution and save the values in
+         * an array
+         *
+         * @param N     The number of values to draw
+         * @param data  The array into which to write the values
+         */
+        void generate(int N, double* data);
 
    protected:
 
@@ -520,7 +529,9 @@ namespace galsim {
          * @param[in] lseed Seed to use
          * @param[in] mean  Mean of the output distribution
          */
-        PoissonDeviate(long lseed, double mean) : BaseDeviate(lseed) { setMean(mean); }
+        PoissonDeviate(long lseed, double mean) :
+            BaseDeviate(lseed), _getValue(&PoissonDeviate::getPDValue)
+        { setMean(mean); }
 
         /**
          * @brief Construct a new Poisson-distributed RNG, sharing the random number
@@ -529,7 +540,9 @@ namespace galsim {
          * @param[in] rhs   Other deviate with which to share the RNG
          * @param[in] mean  Mean of the output distribution
          */
-        PoissonDeviate(const BaseDeviate& rhs, double mean) : BaseDeviate(rhs) { setMean(mean); }
+        PoissonDeviate(const BaseDeviate& rhs, double mean) :
+            BaseDeviate(rhs), _getValue(&PoissonDeviate::getPDValue)
+        { setMean(mean); }
 
         /**
          * @brief Construct a copy that shares the RNG with rhs.
@@ -540,7 +553,9 @@ namespace galsim {
             BaseDeviate(rhs), _pd(rhs._pd), _gd(rhs._gd), _getValue(rhs._getValue) {}
 
         /// @brief Construct a new PoissonDeviate from a serialization string
-        PoissonDeviate(const std::string& str, double mean) : BaseDeviate(str) { setMean(mean); }
+        PoissonDeviate(const std::string& str, double mean) :
+            BaseDeviate(str), _getValue(&PoissonDeviate::getPDValue)
+        { setMean(mean); }
 
         /**
          * @brief Construct a duplicate of this PoissonDeviate object.

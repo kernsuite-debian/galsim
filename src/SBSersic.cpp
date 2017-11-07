@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -30,15 +30,12 @@
 #include "integ/Int.h"
 #include "Solve.h"
 #include "bessel/Roots.h"
-
-#ifdef DEBUGLOGGING
-#include <fstream>
-//std::ostream* dbgout = new std::ofstream("debug.out");
-//std::ostream* dbgout = &std::cout;
-//int verbose_level = 1;
-#endif
+#include "fmath/fmath.hpp"
 
 namespace galsim {
+
+    inline double fast_pow(double x, double y)
+    { return fmath::expd(y * std::log(x)); }
 
     SBSersic::SBSersic(double n, double size, RadiusType rType, double flux,
                        double trunc, bool flux_untruncated, const GSParamsPtr& gsparams) :
@@ -188,94 +185,70 @@ namespace galsim {
         return _flux * _info->kValue(ksq);
     }
 
-    void SBSersic::SBSersicImpl::fillXValue(tmv::MatrixView<double> val,
+    template <typename T>
+    void SBSersic::SBSersicImpl::fillXImage(ImageView<T> im,
                                             double x0, double dx, int izero,
                                             double y0, double dy, int jzero) const
     {
-        dbg<<"SBSersic fillXValue\n";
+        dbg<<"SBSersic fillXImage\n";
         dbg<<"x = "<<x0<<" + i * "<<dx<<", izero = "<<izero<<std::endl;
         dbg<<"y = "<<y0<<" + j * "<<dy<<", jzero = "<<jzero<<std::endl;
         if (izero != 0 || jzero != 0) {
             xdbg<<"Use Quadrant\n";
-            fillXValueQuadrant(val,x0,dx,izero,y0,dy,jzero);
+            fillXImageQuadrant(im,x0,dx,izero,y0,dy,jzero);
+
+#if 0
+            // Note: This bit isn't necessary anymore, because I changed how the quadrant is
+            // filled, so it always does 0,0 first, which means it is already exact.  But leave
+            // this code snippet here in case we make any changes that would necessitate
+            // bringing it back.
+
             // Sersics tend to be super peaky at the center, so if we are including
             // (0,0) in the image, then it is helpful to do (0,0) explicitly rather
             // than treating it as 0 ~= x0 + n*dx, which has rounding errors and doesn't
             // quite come out to 0, and high-n Sersics vary a lot between r = 0 and 1.e-16!
             // By a lot, I mean ~0.5%, which is enough to care about.
-            if (izero != 0 && jzero != 0)
+            if (izero != 0 && jzero != 0) {
                 // NB: _info->xValue(0) = 1
-                val(izero, jzero) = _xnorm;
+                T* ptr = im.getData() + jzero*im.getStride() + izero;
+                *ptr = _xnorm;
+            }
+#endif
         } else {
             xdbg<<"Non-Quadrant\n";
-            assert(val.stepi() == 1);
-            const int m = val.colsize();
-            const int n = val.rowsize();
-            typedef tmv::VIt<double,1,tmv::NonConj> It;
+            const int m = im.getNCol();
+            const int n = im.getNRow();
+            T* ptr = im.getData();
+            const int skip = im.getNSkip();
+            assert(im.getStep() == 1);
 
             x0 *= _inv_r0;
             dx *= _inv_r0;
             y0 *= _inv_r0;
             dy *= _inv_r0;
 
-            for (int j=0;j<n;++j,y0+=dy) {
+            for (int j=0; j<n; ++j,y0+=dy,ptr+=skip) {
                 double x = x0;
                 double ysq = y0*y0;
-                It valit = val.col(j).begin();
-                for (int i=0;i<m;++i,x+=dx) {
-                    double rsq = x*x + ysq;
-                    *valit++ = _xnorm * _info->xValue(rsq);
-                }
+                for (int i=0; i<m; ++i,x+=dx)
+                    *ptr++ = _xnorm * _info->xValue(x*x + ysq);
             }
         }
     }
 
-    void SBSersic::SBSersicImpl::fillKValue(tmv::MatrixView<std::complex<double> > val,
-                                            double kx0, double dkx, int izero,
-                                            double ky0, double dky, int jzero) const
-    {
-        dbg<<"SBSersic fillKValue\n";
-        dbg<<"kx = "<<kx0<<" + i * "<<dkx<<", izero = "<<izero<<std::endl;
-        dbg<<"ky = "<<ky0<<" + j * "<<dky<<", jzero = "<<jzero<<std::endl;
-        if (izero != 0 || jzero != 0) {
-            xdbg<<"Use Quadrant\n";
-            fillKValueQuadrant(val,kx0,dkx,izero,ky0,dky,jzero);
-        } else {
-            xdbg<<"Non-Quadrant\n";
-            assert(val.stepi() == 1);
-            const int m = val.colsize();
-            const int n = val.rowsize();
-            typedef tmv::VIt<std::complex<double>,1,tmv::NonConj> It;
-
-            kx0 *= _r0;
-            dkx *= _r0;
-            ky0 *= _r0;
-            dky *= _r0;
-
-            for (int j=0;j<n;++j,ky0+=dky) {
-                double kx = kx0;
-                double kysq = ky0*ky0;
-                It valit = val.col(j).begin();
-                for (int i=0;i<m;++i,kx+=dkx) {
-                    double ksq = kx*kx + kysq;
-                    *valit++ = _flux * _info->kValue(ksq);
-                }
-            }
-        }
-    }
-
-    void SBSersic::SBSersicImpl::fillXValue(tmv::MatrixView<double> val,
+    template <typename T>
+    void SBSersic::SBSersicImpl::fillXImage(ImageView<T> im,
                                             double x0, double dx, double dxy,
                                             double y0, double dy, double dyx) const
     {
-        dbg<<"SBSersic fillXValue\n";
+        dbg<<"SBSersic fillXImage\n";
         dbg<<"x = "<<x0<<" + i * "<<dx<<" + j * "<<dxy<<std::endl;
         dbg<<"y = "<<y0<<" + i * "<<dyx<<" + j * "<<dy<<std::endl;
-        assert(val.stepi() == 1);
-        assert(val.canLinearize());
-        const int m = val.colsize();
-        const int n = val.rowsize();
-        typedef tmv::VIt<double,1,tmv::NonConj> It;
+        const int m = im.getNCol();
+        const int n = im.getNRow();
+        T* ptr = im.getData();
+        const int skip = im.getNSkip();
+        assert(im.getStep() == 1);
 
         x0 *= _inv_r0;
         dx *= _inv_r0;
@@ -284,16 +257,13 @@ namespace galsim {
         dy *= _inv_r0;
         dyx *= _inv_r0;
 
-        It valit = val.linearView().begin();
         double x00 = x0; // Preserve the originals for below.
         double y00 = y0;
-        for (int j=0;j<n;++j,x0+=dxy,y0+=dy) {
+        for (int j=0; j<n; ++j,x0+=dxy,y0+=dy,ptr+=skip) {
             double x = x0;
             double y = y0;
-            for (int i=0;i<m;++i,x+=dx,y+=dyx) {
-                double rsq = x*x + y*y;
-                *valit++ = _xnorm * _info->xValue(rsq);
-            }
+            for (int i=0; i<m; ++i,x+=dx,y+=dyx)
+                *ptr++ = _xnorm * _info->xValue(x*x + y*y);
         }
 
         // Check if one of these points is really (0,0) in disguise and fix it up
@@ -316,10 +286,11 @@ namespace galsim {
 
         if ( std::abs(i0 - inti0) < 1.e-12 && std::abs(j0 - intj0) < 1.e-12 &&
              inti0 >= 0 && inti0 < m && intj0 >= 0 && intj0 < n)  {
-            dbg<<"Fixing central value from "<<val(inti0, intj0);
+            ptr = im.getData() + intj0*im.getStride() + inti0;
+            dbg<<"Fixing central value from "<<*ptr;
             // NB: _info->xValue(0) = 1
-            val(inti0, intj0) = _xnorm;
-            dbg<<" to "<<val(inti0, intj0)<<std::endl;
+            *ptr = _xnorm;
+            dbg<<" to "<<*ptr<<std::endl;
 #ifdef DEBUGLOGGING
             double x = x00;
             double y = y00;
@@ -331,21 +302,54 @@ namespace galsim {
             dbg<<"xValue(0) = "<<_info->xValue(0.)<<std::endl;
 #endif
         }
-
     }
 
-    void SBSersic::SBSersicImpl::fillKValue(tmv::MatrixView<std::complex<double> > val,
-                                            double kx0, double dkx, double dkxy,
-                                            double ky0, double dky, double dkyx) const
+    template <typename T>
+    void SBSersic::SBSersicImpl::fillKImage(ImageView<std::complex<T> > im,
+                                                double kx0, double dkx, int izero,
+                                                double ky0, double dky, int jzero) const
     {
-        dbg<<"SBSersic fillKValue\n";
+        dbg<<"SBSersic fillKImage\n";
+        dbg<<"kx = "<<kx0<<" + i * "<<dkx<<", izero = "<<izero<<std::endl;
+        dbg<<"ky = "<<ky0<<" + j * "<<dky<<", jzero = "<<jzero<<std::endl;
+        if (izero != 0 || jzero != 0) {
+            xdbg<<"Use Quadrant\n";
+            fillKImageQuadrant(im,kx0,dkx,izero,ky0,dky,jzero);
+        } else {
+            xdbg<<"Non-Quadrant\n";
+            const int m = im.getNCol();
+            const int n = im.getNRow();
+            std::complex<T>* ptr = im.getData();
+            int skip = im.getNSkip();
+            assert(im.getStep() == 1);
+
+            kx0 *= _r0;
+            dkx *= _r0;
+            ky0 *= _r0;
+            dky *= _r0;
+
+            for (int j=0; j<n; ++j,ky0+=dky,ptr+=skip) {
+                double kx = kx0;
+                double kysq = ky0*ky0;
+                for (int i=0;i<m;++i,kx+=dkx)
+                    *ptr++ = _flux * _info->kValue(kx*kx + kysq);
+            }
+        }
+    }
+
+    template <typename T>
+    void SBSersic::SBSersicImpl::fillKImage(ImageView<std::complex<T> > im,
+                                                double kx0, double dkx, double dkxy,
+                                                double ky0, double dky, double dkyx) const
+    {
+        dbg<<"SBSersic fillKImage\n";
         dbg<<"kx = "<<kx0<<" + i * "<<dkx<<" + j * "<<dkxy<<std::endl;
         dbg<<"ky = "<<ky0<<" + i * "<<dkyx<<" + j * "<<dky<<std::endl;
-        assert(val.stepi() == 1);
-        assert(val.canLinearize());
-        const int m = val.colsize();
-        const int n = val.rowsize();
-        typedef tmv::VIt<std::complex<double>,1,tmv::NonConj> It;
+        const int m = im.getNCol();
+        const int n = im.getNRow();
+        std::complex<T>* ptr = im.getData();
+        int skip = im.getNSkip();
+        assert(im.getStep() == 1);
 
         kx0 *= _r0;
         dkx *= _r0;
@@ -354,14 +358,11 @@ namespace galsim {
         dky *= _r0;
         dkyx *= _r0;
 
-        It valit = val.linearView().begin();
-        for (int j=0;j<n;++j,kx0+=dkxy,ky0+=dky) {
+        for (int j=0; j<n; ++j,kx0+=dkxy,ky0+=dky,ptr+=skip) {
             double kx = kx0;
             double ky = ky0;
-            for (int i=0;i<m;++i,kx+=dkx,ky+=dkyx) {
-                double ksq = kx*kx + ky*ky;
-                *valit++ = _flux * _info->kValue(ksq);
-            }
+            for (int i=0; i<m; ++i,kx+=dkx,ky+=dkyx)
+                *ptr++ = _flux * _info->kValue(kx*kx + ky*ky);
         }
     }
 
@@ -374,6 +375,7 @@ namespace galsim {
         _trunc_sq(_trunc*_trunc), _truncated(_trunc > 0.),
         _gamma2n(boost::math::tgamma(2.*_n)),
         _maxk(0.), _stepk(0.), _re(0.), _flux(0.),
+        _kderiv2(0.), _kderiv4(0.),
         _ft(Table<double,double>::spline)
     {
         dbg<<"Start SersicInfo constructor for n = "<<_n<<std::endl;
@@ -417,7 +419,7 @@ namespace galsim {
             // Calculate the flux of a truncated profile (relative to the integral for
             // an untruncated profile).
             if (_truncated) {
-                double z = std::pow(_trunc, 1./_n);
+                double z = fast_pow(_trunc, 1./_n);
                 // integrate from 0. to _trunc
                 double gamma2nz = boost::math::tgamma_lower(2.*_n, z);
                 _flux = gamma2nz / _gamma2n;  // _flux < 1
@@ -435,7 +437,7 @@ namespace galsim {
     double SersicInfo::xValue(double rsq) const
     {
         if (_truncated && rsq > _trunc_sq) return 0.;
-        else return std::exp(-std::pow(rsq,_inv2n));
+        else return fmath::expd(-fast_pow(rsq,_inv2n));
     }
 
     double SersicInfo::kValue(double ksq) const
@@ -460,7 +462,7 @@ namespace galsim {
         SersicHankel(double invn, double k): _invn(invn), _k(k) {}
 
         double operator()(double r) const
-        { return r*std::exp(-std::pow(r, _invn))*j0(_k*r); }
+        { return r*fmath::expd(-fast_pow(r, _invn))*j0(_k*r); }
 
     private:
         double _invn;
@@ -538,7 +540,7 @@ namespace galsim {
         _maxk = kmin; // Just in case we break on the first iteration.
         bool found_maxk = false;
         for (double logk = std::log(kmin)-0.001; logk < std::log(500.); logk += dlogk) {
-            double k = std::exp(logk);
+            double k = fmath::expd(logk);
             double ksq = k*k;
             SersicHankel I(_invn, k);
 
@@ -587,7 +589,7 @@ namespace galsim {
 
             // Update the terms needed for the high-k approximation
             if (int(fit_vals.size()) == n_fit) {
-                double k_back = std::exp(logk - n_fit*dlogk);
+                double k_back = fmath::expd(logk - n_fit*dlogk);
                 double f_back = fit_vals.back();
                 fit_vals.pop_back();
                 double inv_k = 1./k;
@@ -608,7 +610,7 @@ namespace galsim {
         }
         // If didn't find a good approximation for large k, just use the largest k we put in
         // in the table.  (Need to use some approximation after this anyway!)
-        if (_ksq_max <= 0.) _ksq_max = std::exp(2. * _ft.argMax());
+        if (_ksq_max <= 0.) _ksq_max = fmath::expd(2. * _ft.argMax());
         xdbg<<"ft.argMax = "<<_ft.argMax()<<std::endl;
         xdbg<<"ksq_max = "<<_ksq_max<<std::endl;
 
@@ -616,7 +618,7 @@ namespace galsim {
             // This is the last value that didn't satisfy the requirement, so just go to
             // the next value.
             xdbg<<"maxk with val > "<<_gsparams->maxk_threshold<<" = "<<_maxk<<std::endl;
-            _maxk *= exp(dlogk);
+            _maxk *= fmath::expd(dlogk);
             xdbg<<"maxk -> "<<_maxk<<std::endl;
         } else {
             // Then we never did find a value of k such that f(k) < maxk_threshold
@@ -850,7 +852,7 @@ namespace galsim {
     {
     public:
         SersicRadialFunction(double invn): _invn(invn) {}
-        double operator()(double r) const { return std::exp(-std::pow(r,_invn)); }
+        double operator()(double r) const { return fmath::expd(-fast_pow(r,_invn)); }
     private:
         double _invn;
     };

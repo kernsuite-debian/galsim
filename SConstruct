@@ -1,6 +1,7 @@
+from __future__ import print_function
 # vim: set filetype=python et ts=4 sw=4:
 
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -26,9 +27,9 @@ import distutils.sysconfig
 
 from sys import stdout,stderr
 
-print 'SCons is version',SCons.__version__,'using python version',platform.python_version()
+print('SCons is version',SCons.__version__,'using python version',platform.python_version())
 
-print "Python is from", distutils.sysconfig.get_python_inc()
+print("Python is from", distutils.sysconfig.get_python_inc())
 
 # Require SCons version >= 1.1
 # (This is the earliest version I could find to test on.  Probably works with 1.0.)
@@ -36,7 +37,7 @@ EnsureSConsVersion(1, 1)
 
 # Subdirectories containing SConscript files.  We always process these, but
 # there are some other optional ones
-subdirs=['src', 'pysrc', 'bin', 'galsim', 'share']
+subdirs=['src', 'pysrc', 'bin', 'share', 'galsim']
 
 # Configurations will be saved here so command line options don't
 # have to be sent more than once
@@ -68,8 +69,6 @@ opts.Add(BoolVariable('EXTRA_DEBUG','Turn on extra debugging info',False))
 opts.Add(BoolVariable('WARN','Add warning compiler flags, like -Wall', False))
 opts.Add('PYTHON','Name of python executable','')
 
-opts.Add(BoolVariable('WITH_UPS','Install ups/ directory for use with EUPS', False))
-
 opts.Add(PathVariable('PREFIX','prefix for installation',
          '', PathVariable.PathAccept))
 opts.Add(PathVariable('PYPREFIX','location of your site-packages directory',
@@ -77,6 +76,7 @@ opts.Add(PathVariable('PYPREFIX','location of your site-packages directory',
 opts.Add(PathVariable('FINAL_PREFIX',
          'final installation prefix if different from PREFIX',
          '', PathVariable.PathAccept))
+opts.Add(BoolVariable('WITH_UPS','Install ups/ directory for use with EUPS', False))
 
 opts.Add('TMV_DIR','Explicitly give the tmv prefix','')
 opts.Add('TMV_LINK','File that contains the linking instructions for TMV','')
@@ -109,10 +109,7 @@ opts.Add(PathVariable('DYLD_LIBRARY_PATH',
          '', PathVariable.PathAccept))
 opts.Add(PathVariable('DYLD_FALLBACK_LIBRARY_PATH',
          'Set the DYLD_FALLBACK_LIBRARY_PATH inside of SCons.  '+
-         'Particularly useful on El Capitan (and later), since Apple strips out '+
-         'DYLD_FALLBACK_LIBRARY_PATH from the environment that SCons sees, so if you need it, '+
-         'this option enables SCons to set it back in for you by doing '+
-         '`scons DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH`.',
+         'cf. DYLD_LIBRARY_PATH for why this may be useful.',
          '', PathVariable.PathAccept))
 opts.Add(PathVariable('LD_LIBRARY_PATH',
          'Set the LD_LIBRARY_PATH inside of SCons. '+
@@ -166,7 +163,7 @@ def ClearCache():
         shutil.rmtree(".sconf_temp")
 
 def GetMacVersion():
-    print 'Mac version is',platform.mac_ver()[0]
+    print('Mac version is',platform.mac_ver()[0])
     ver = platform.mac_ver()[0].split('.')
     if len(ver) >= 2:
         return ver[:2]
@@ -179,19 +176,19 @@ def ErrorExit(*args, **kwargs):
     libraries, compiler, etc., we don't want to cache the result.
     On the other hand, if we delete the .scon* files now, then they aren't
     available to diagnose any problems.
-    So we write a file called gs.error that
+    So we write a file called gs_error.txt that
     a) includes some relevant information to diagnose the problem.
     b) indicates that we should clear the cache the next time we run scons.
     """
 
     import shutil
 
-    out = open("gs.error","wb")
+    out = open("gs_error.txt","wb")
 
-    # Start with the error message to output both to the screen and to the end of gs.error:
-    print
+    # Start with the error message to output both to the screen and to gs_error.txt:
+    print()
     for s in args:
-        print s
+        print(s)
         out.write(s + '\n')
     out.write('\n')
 
@@ -233,8 +230,8 @@ def ErrorExit(*args, **kwargs):
             else:
                 cmd = env['PYTHON'] + " < " + conftest
             cmd = PrependLibraryPaths(cmd,env)
-            p = subprocess.Popen(['bash','-c',cmd], stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT, shell=False)
+            p = subprocess.Popen(['bash -c ' + cmd], stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, shell=True)
             conftest_out = p.stdout.readlines()
             out.write('Output of the command %s is:\n'%cmd)
             out.write(''.join(conftest_out) + '\n')
@@ -251,33 +248,114 @@ def ErrorExit(*args, **kwargs):
                 otool_out = p.stdout.readlines()
                 out.write('Output of the command %s is:\n'%cmd)
                 out.write(''.join(otool_out) + '\n')
-    except:
+            else:
+                conftest_num = int(conftest.replace('.sconf_temp/conftest_',''))
+                conftest_mod = '.sconf_temp/conftest_%d_mod/'%(conftest_num-1)
+                if os.path.exists(conftest_mod):
+                    if sys.platform.find('darwin') != -1:
+                        cmd = 'otool -L ' + os.path.join(conftest_mod, 'check_*.so')
+                    else:
+                        cmd = 'ldd ' + os.path.join(conftest_mod, 'check_*.so')
+                    p = subprocess.Popen([cmd], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                         shell=True)
+                    mod_out = p.stdout.readlines()
+                    out.write('Output of the command %s is:\n'%cmd)
+                    out.write(''.join(mod_out) + '\n')
+    except Exception as e:
         out.write("Error trying to get output of conftest executables.\n")
-        out.write(sys.exc_info()[0])
+        out.write("Caught exception: " + str(e) + '\n')
+        out.write(str(sys.exc_info()) + '\n')
 
     # Give a helpful message if running El Capitan.
     if sys.platform.find('darwin') != -1:
         import platform
         major, minor = GetMacVersion()
         if int(major) > 10 or int(minor) >= 11:
-            print
-            print 'Starting with El Capitan (OSX 10.11), Apple instituted a new policy called'
-            print '"System Integrity Protection" (SIP) where they strip "dangerous" environment'
-            print 'variables from system calls (including SCons).  So if your system is using'
-            print 'DYLD_LIBRARY_PATH for run-time library resolution, then SCons cannot see it'
-            print 'so that may be why this is failing.  cf. Issues #721 and #725.'
-            print 'You should try executing:'
-            print
-            print '    scons DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH'
+            print()
+            print('Starting with El Capitan (OSX 10.11), Apple instituted a new policy called')
+            print('"System Integrity Protection" (SIP) where they strip "dangerous" environment')
+            print('variables from system calls (including SCons).  So if your system is using')
+            print('DYLD_LIBRARY_PATH for run-time library resolution, then SCons cannot see it')
+            print('so that may be why this is failing.  cf. Issues #721 and #725.')
+            print('You should try executing:')
+            print()
+            print('    scons DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH')
 
-    print
-    print 'Please fix the above error(s) and rerun scons.'
-    print 'Note: you may want to look through the file INSTALL.md for advice.'
-    print 'Also, if you are having trouble, please check the INSTALL FAQ at '
-    print '   https://github.com/GalSim-developers/GalSim/wiki/Installation%20FAQ'
-    print
+    print()
+    print('Please fix the above error(s) and rerun scons.')
+    print('Note: you may want to look through the file INSTALL.md for advice.')
+    print('Also, if you are having trouble, please check the INSTALL FAQ at ')
+    print('   https://github.com/GalSim-developers/GalSim/wiki/Installation%20FAQ')
+    print()
+    print('If nothing there seems helpful, feel free to post an issue here:')
+    print('   https://github.com/GalSim-developers/GalSim/issues')
+    print('describing the problem along with the particulars of your system and')
+    print('configuration.  Include a copy of the above output to the screen, and')
+    print('post and copy of the file gs_error.txt, which will help people diagnose')
+    print('the problem.')
+    print()
     Exit(1)
 
+
+def TrySSEFlags(env, flags):
+    """Try some options for the sse flags.  Take the first in the list that works.
+    """
+    sse_source_file = """
+    #include <complex>
+    #include "xmmintrin.h"
+
+#ifdef __SSE2__
+    std::complex<double> dot(int n, std::complex<double>* A, std::complex<double> *B)
+    {
+        std::complex<double> sum(0);
+        int n_2 = (n>>1);
+        if (n_2) {
+            union { __m128d xm; double xd[2]; } xsum;
+            xsum.xm = _mm_set1_pd(0.);
+            __m128d xsum2 = _mm_set1_pd(0.);
+            const std::complex<double>* B1 = B+1;
+            do {
+                const __m128d& xA = *(const __m128d*)(A);
+                const __m128d& xB1 = *(const __m128d*)(B);
+                const __m128d& xB2 = *(const __m128d*)(B1);
+                A += 2; B += 2; B1 += 2;
+                __m128d xA1 = _mm_shuffle_pd(xA,xA,_MM_SHUFFLE2(0,0));
+                __m128d xA2 = _mm_shuffle_pd(xA,xA,_MM_SHUFFLE2(1,1));
+                __m128d x1 = _mm_mul_pd(xA1,xB1);
+                __m128d x2 = _mm_mul_pd(xA2,xB2);
+                xsum.xm = _mm_add_pd(xsum.xm,x1);
+                xsum2 = _mm_add_pd(xsum2,x2);
+            } while (--n_2);
+            xsum.xm = _mm_add_pd(xsum.xm,xsum2);
+            sum += std::complex<double>(xsum.xd[0],xsum.xd[1]);
+        }
+        return sum;
+    }
+#endif
+    float dot(float* a, float *b)
+    {
+        __m128 xA = _mm_load_ps(a);
+        __m128 xB = _mm_load_ps(b);
+        union { __m128 xm; float xf[4]; } res;
+        res.xm = _mm_mul_ps(xA,xB);
+        return res.xf[0] + res.xf[1] + res.xf[2] + res.xf[3];
+    }
+"""
+    if len(flags) == 0: return
+
+    orig_flags = env['CCFLAGS']
+    config = env.Configure()
+    found = False
+    for flag in flags:
+        config.env.Replace(CCFLAGS=orig_flags + [flag])
+        found = config.TryCompile(sse_source_file,'.cpp')
+        if found:
+            print('Using SSE with flag',flag)
+            env = config.Finish()
+            return
+    print('None of the possible SSE flags worked.')
+    config.env.Replace(CCFLAGS=orig_flags)
+    env = config.Finish()
 
 
 def BasicCCFlags(env):
@@ -301,8 +379,10 @@ def BasicCCFlags(env):
         env.AppendUnique(LIBS='pthread')
 
     if env['FLAGS'] == '':
+        sse_flags = []
         if compiler == 'g++':
-            env.Replace(CCFLAGS=['-O2'])
+            env.Replace(CCFLAGS=['-O2','-std=c++98'])
+            sse_flags = ['-msse2', '-msse']
             env.Append(CCFLAGS=['-fno-strict-aliasing'])
             # Unfortunately this next flag requires strict-aliasing, but allowing that
             # opens up a Pandora's box of bugs and warnings, so I don't want to do that.
@@ -316,7 +396,8 @@ def BasicCCFlags(env):
                 env.Append(CCFLAGS=['-g3'])
 
         elif compiler == 'clang++':
-            env.Replace(CCFLAGS=['-O2'])
+            env.Replace(CCFLAGS=['-O2','-std=c++98'])
+            sse_flags = ['-msse2', '-msse']
             if env['WITH_PROF']:
                 env.Append(CCFLAGS=['-pg'])
                 env.Append(LINKFLAGS=['-pg'])
@@ -326,7 +407,8 @@ def BasicCCFlags(env):
                 env.Append(CCFLAGS=['-g3'])
 
         elif compiler == 'icpc':
-            env.Replace(CCFLAGS=['-O2','-msse2'])
+            env.Replace(CCFLAGS=['-O2','-std=c++98'])
+            sse_flags = ['-msse2', '-msse']
             if version >= 10:
                 env.Append(CCFLAGS=['-vec-report0'])
             if env['WITH_PROF']:
@@ -362,8 +444,9 @@ def BasicCCFlags(env):
                 env.Append(CCFLAGS=['/W2','/WX'])
 
         else:
-            print '\nWARNING: Unknown compiler.  You should set FLAGS directly.\n'
+            print('\nWARNING: Unknown compiler.  You should set FLAGS directly.\n')
             env.Replace(CCFLAGS=[])
+        TrySSEFlags(env, sse_flags)
 
     else :
         # If flags are specified as an option use them:
@@ -401,7 +484,7 @@ def AddOpenMPFlag(env):
     version = env['CXXVERSION_NUMERICAL']
     if compiler == 'g++':
         if version < openmp_mingcc_vers:
-            print 'No OpenMP support for g++ versions before ',openmp_mingcc_vers
+            print('No OpenMP support for g++ versions before ',openmp_mingcc_vers)
             env['WITH_OPENMP'] = False
             return
         flag = ['-fopenmp']
@@ -415,12 +498,12 @@ def AddOpenMPFlag(env):
             xlib += ['gcc_eh']
         env.Append(CCFLAGS=['-fopenmp'])
     elif compiler == 'clang++':
-        print 'No OpenMP support for clang++'
+        print('No OpenMP support for clang++')
         env['WITH_OPENMP'] = False
         return
     elif compiler == 'icpc':
         if version < openmp_minicpc_vers:
-            print 'No OpenMP support for icpc versions before ',openmp_minicpc_vers
+            print('No OpenMP support for icpc versions before ',openmp_minicpc_vers)
             env['WITH_OPENMP'] = False
             return
         flag = ['-openmp']
@@ -429,7 +512,7 @@ def AddOpenMPFlag(env):
         env.Append(CCFLAGS=['-openmp'])
     elif compiler == 'pgCC':
         if version < openmp_minpgcc_vers:
-            print 'No OpenMP support for pgCC versions before ',openmp_minpgcc_vers
+            print('No OpenMP support for pgCC versions before ',openmp_minpgcc_vers)
             env['WITH_OPENMP'] = False
             return
         flag = ['-mp','--exceptions']
@@ -445,16 +528,16 @@ def AddOpenMPFlag(env):
         # I believe the Professional edition has full OpenMP support,
         # so if you have that, the above lines might work for you.
         # Just uncomment those, and commend the below three lines.
-        print 'No OpenMP support for cl'
+        print('No OpenMP support for cl')
         env['WITH_OPENMP'] = False
         return
     else:
-        print '\nWARNING: No OpenMP support for compiler ',compiler,'\n'
+        print('\nWARNING: No OpenMP support for compiler ',compiler,'\n')
         env['WITH_OPENMP'] = False
         return
 
     #print 'Adding openmp support:',flag
-    print 'Using OpenMP'
+    print('Using OpenMP')
     env.AppendUnique(LINKFLAGS=ldflag)
     env.AppendUnique(LIBS=xlib)
 
@@ -488,7 +571,7 @@ def GetCompilerVersion(env):
     if compiler is None:
         ErrorExit('Specified compiler not found in path: %s' % env['CXX'])
 
-    print 'Using compiler:',compiler
+    print('Using compiler:',compiler)
 
     compiler_real = os.path.realpath(compiler)
     compiler_base = os.path.basename(compiler)
@@ -531,13 +614,13 @@ def GetCompilerVersion(env):
     if compilertype != 'unknown':
         cmd = compiler + ' ' + versionflag + ' 2>&1'
         import subprocess
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+        p = subprocess.Popen([cmd], stdout=subprocess.PIPE, shell=True)
         lines = p.stdout.readlines()
 
         # Check if g++ is a symlink for something else:
         if compilertype is 'g++':
             if 'clang' in lines[0]:
-                print 'Detected clang++ masquerading as g++'
+                print('Detected clang++ masquerading as g++')
                 compilertype = 'clang++'
                 # When it is masquerading, the line with the version is the second line.
                 linenum=1
@@ -545,13 +628,13 @@ def GetCompilerVersion(env):
         # Check if c++ is a symlink for something else:
         if compilertype is 'c++':
             if 'clang' in lines[0]:
-                print 'Detected clang++ masquerading as c++'
+                print('Detected clang++ masquerading as c++')
                 compilertype = 'clang++'
             elif 'g++' in lines[0] or 'gcc' in lines[0]:
-                print 'Detected g++ masquerading as c++'
+                print('Detected g++ masquerading as c++')
                 compilertype = 'g++'
             else:
-                print 'Cannot determine what kind of compiler c++ really is'
+                print('Cannot determine what kind of compiler c++ really is')
                 compilertype = 'unknown'
             # Any others I should look for?
 
@@ -570,7 +653,7 @@ def GetCompilerVersion(env):
             version = 0
             vnum = 0
 
-    print 'compiler version:',version
+    print('compiler version:',version)
 
     env['CXXTYPE'] = compilertype
     env['CXXVERSION'] = version
@@ -584,7 +667,7 @@ def GetNosetestsVersion(env):
     p = subprocess.Popen([cmd],stdout=subprocess.PIPE,shell=True)
     line = p.stdout.readlines()[0]
     version = line.split()[2]
-    print 'nosetests version:',version
+    print('nosetests version:',version)
     env['NOSETESTSVERSION'] = version
 
 
@@ -631,7 +714,7 @@ def AddDepPaths(bin_paths,cpp_paths,lib_paths):
         tdir = FindPathInEnv(env, dirtag)
         if tdir is None:
             if env[dirtag] != '':
-                print 'WARNING: could not find specified %s = %s'%(dirtag,env[dirtag])
+                print('WARNING: could not find specified %s = %s'%(dirtag,env[dirtag]))
             continue
 
         AddPath(bin_paths, os.path.join(tdir, 'bin'))
@@ -700,32 +783,32 @@ def AddExtraPaths(env):
             AddPath(cpp_paths, os.path.join(env['PREFIX'], 'include'))
 
     # Paths found in environment paths
-    if env['IMPORT_PATHS'] and os.environ.has_key('PATH'):
+    if env['IMPORT_PATHS'] and 'PATH' in os.environ:
         paths=os.environ['PATH']
         paths=paths.split(os.pathsep)
         AddPath(bin_paths, paths)
 
-    if env['IMPORT_PATHS'] and os.environ.has_key('C_INCLUDE_PATH'):
+    if env['IMPORT_PATHS'] and 'C_INCLUDE_PATH' in os.environ:
         paths=os.environ['C_INCLUDE_PATH']
         paths=paths.split(os.pathsep)
         AddPath(cpp_paths, paths)
 
-    if env['IMPORT_PATHS'] and os.environ.has_key('LIBRARY_PATH'):
+    if env['IMPORT_PATHS'] and 'LIBRARY_PATH' in os.environ:
         paths=os.environ['LIBRARY_PATH']
         paths=paths.split(os.pathsep)
         AddPath(lib_paths, paths)
 
-    if env['IMPORT_PATHS'] and os.environ.has_key('LD_LIBRARY_PATH'):
+    if env['IMPORT_PATHS'] and 'LD_LIBRARY_PATH' in os.environ:
         paths=os.environ['LD_LIBRARY_PATH']
         paths=paths.split(os.pathsep)
         AddPath(lib_paths, paths)
 
-    if env['IMPORT_PATHS'] and os.environ.has_key('DYLD_LIBRARY_PATH'):
+    if env['IMPORT_PATHS'] and 'DYLD_LIBRARY_PATH' in os.environ:
         paths=os.environ['DYLD_LIBRARY_PATH']
         paths=paths.split(os.pathsep)
         AddPath(lib_paths, paths)
 
-    if env['IMPORT_PATHS'] and os.environ.has_key('DYLD_FALLBACK_LIBRARY_PATH'):
+    if env['IMPORT_PATHS'] and 'DYLD_FALLBACK_LIBRARY_PATH' in os.environ:
         paths=os.environ['DYLD_FALLBACK_LIBRARY_PATH']
         paths=paths.split(os.pathsep)
         AddPath(lib_paths, paths)
@@ -743,7 +826,7 @@ def ReadFileList(fname):
     try:
         files=open(fname).read().split()
     except:
-        print 'Could not open file:',fname
+        print('Could not open file:',fname)
         sys.exit(45)
     files = [f.strip() for f in files]
     return files
@@ -976,8 +1059,8 @@ int main() { std::cout<<BOOST_VERSION<<std::endl; return 0; }
 """
     ok, boost_version = AltTryRun(config,boost_version_file,'.cpp')
     boost_version = int(boost_version.strip())
-    print 'Boost version is %d.%d.%d' % (
-            boost_version / 100000, boost_version / 100 % 1000, boost_version % 100)
+    print('Boost version is %d.%d.%d' % (
+            boost_version / 100000, boost_version / 100 % 1000, boost_version % 100))
     
     return 1
 
@@ -997,7 +1080,7 @@ int main()
   return 0;
 }
 """
-    print 'Checking for correct TMV linkage... (this may take a little while)'
+    print('Checking for correct TMV linkage... (this may take a little while)')
     config.Message('Checking for correct TMV linkage... ')
 
     result = config.TryCompile(tmv_source_file,'.cpp')
@@ -1225,7 +1308,7 @@ PyMODINIT_FUNC initcheck_python(void)
         config.Result(1)
         py_version = GetPythonVersion(config)
         config.env['PYTHON_VERSION'] = py_version
-        print 'Building for python version '+py_version
+        print('Building for python version '+py_version)
         return 1
 
     # Other times (e.g. most Mac systems) we'll need to link the library.
@@ -1266,7 +1349,7 @@ PyMODINIT_FUNC initcheck_python(void)
         if result:
             config.env['PYTHON_VERSION'] = py_version
             config.Result(1)
-            print 'Building for python version '+py_version
+            print('Building for python version '+py_version)
             return 1
 
     # If that didn't work, we'll need to add a directory to LIBPATH.  So let's see if we
@@ -1323,9 +1406,9 @@ PyMODINIT_FUNC initcheck_python(void)
                 if CheckModuleLibs(config,py_lib,python_source_file,'check_python'):
                     config.env['PYTHON_VERSION'] = py_version
                     config.Result(1)
-                    print 'Building for python version '+py_version
-                    print 'Python libdir = ',py_libdir
-                    print 'Python libfile = ',py_libfile
+                    print('Building for python version '+py_version)
+                    print('Python libdir = ',py_libdir)
+                    print('Python libfile = ',py_libfile)
                     return 1
 
     # Oh well, it was worth a shot.
@@ -1491,19 +1574,32 @@ PyMODINIT_FUNC initcheck_numpy(void)
         ErrorExit('Unable to build a python loadable module that uses numpy')
 
     config.Result(1)
+
+    result, numpy_ver = TryScript(config,"import numpy; print(numpy.__version__)",python)
+    print('Numpy version is',numpy_ver)
+
     return 1
 
 def CheckPyFITS(config):
     config.Message('Checking for PyFITS... ')
 
     result, output = TryScript(config,"import pyfits",python)
+    astropy = False
     if not result:
         result, output = TryScript(config,"import astropy.io.fits",python)
+        astropy = True
     if not result:
         ErrorExit("Unable to import pyfits or astropy.io.fits using the python executable:\n" +
                   python)
-
     config.Result(1)
+
+    if astropy:
+        result, astropy_ver = TryScript(config,"import astropy; print(astropy.__version__)",python)
+        print('Astropy version is',astropy_ver)
+    else:
+        result, pyfits_ver = TryScript(config,"import pyfits; print(pyfits.__version__)",python)
+        print('PyFITS version is',pyfits_ver)
+
     return 1
 
 def CheckFuture(config):
@@ -1512,8 +1608,11 @@ def CheckFuture(config):
     result, output = TryScript(config,"import future",python)
     if not result:
         ErrorExit("Unable to import future using the python executable:\n" + python)
-
     config.Result(1)
+
+    result, future_ver = TryScript(config,"import future; print(future.__version__)",python)
+    print('Future version is',future_ver)
+
     return 1
 
 def CheckBoostPython(config):
@@ -1543,16 +1642,23 @@ BOOST_PYTHON_MODULE(check_bp) {
     if not result:
         ErrorExit('Unable to compile a file with #include "boost/python.hpp"')
 
+    py_version = config.env['PYTHON_VERSION']
+    # For ubuntu Python 3.  cf. #790.
+    # Also https://bugs.launchpad.net/ubuntu/+source/boost1.53/+bug/1231609
+    pyxx = 'boost_python-py%s%s'%tuple(py_version.split('.'))
+
     if config.env['PYTHON_VERSION'] >= '3.0':
         result = (
             CheckModuleLibs(config,[''],bp_source_file,'check_bp') or
             CheckModuleLibs(config,['boost_python3'],bp_source_file,'check_bp') or
-            CheckModuleLibs(config,['boost_python3-mt'],bp_source_file,'check_bp') )
+            CheckModuleLibs(config,['boost_python3-mt'],bp_source_file,'check_bp') or
+            CheckModuleLibs(config,[pyxx],bp_source_file,'check_bp') )
     else:
         result = (
             CheckModuleLibs(config,[''],bp_source_file,'check_bp') or
             CheckModuleLibs(config,['boost_python'],bp_source_file,'check_bp') or
-            CheckModuleLibs(config,['boost_python-mt'],bp_source_file,'check_bp') )
+            CheckModuleLibs(config,['boost_python-mt'],bp_source_file,'check_bp') or
+            CheckModuleLibs(config,[pyxx],bp_source_file,'check_bp') )
     if not result:
         ErrorExit('Unable to build a python loadable module with Boost.Python')
 
@@ -1603,13 +1709,13 @@ except:
     config.Result(result)
 
     if not result:
-        print """
+        print("""
 WARNING: There seems to be a mismatch between this C++ compiler and the one
          that was used to build either python or boost.python (or both).
          This might be ok, but if you get a linking error in the subsequent 
          build, it is possible  that you will need to rebuild boost with the
          same compiler (and sometimes version) that you are using here.
-"""
+""")
         config.env['final_messages'].append("""
 WARNING: There seems to be a mismatch between this C++ compiler and the one
          that was used to build either python or boost.python (or both).
@@ -1736,22 +1842,22 @@ int main()
 { std::cout<<tmv::TMV_Version()<<std::endl; return 0; }
 """
     ok, tmv_version = AltTryRun(config,tmv_version_file,'.cpp')
-    print 'TMV version is '+tmv_version.strip()
+    print('TMV version is',tmv_version.strip())
 
     compiler = config.env['CXXTYPE']
     version = config.env['CXXVERSION_NUMERICAL']
 
-    if not config.env.has_key('LIBS') :
+    if 'LIBS' not in config.env :
         config.env['LIBS'] = []
 
     tmv_link_file = FindTmvLinkFile(config)
 
-    print 'Using TMV_LINK file:',tmv_link_file
+    print('Using TMV_LINK file:',tmv_link_file)
     try:
         tmv_link = open(tmv_link_file).read().strip()
     except:
         ErrorExit('Could not open TMV link file: ',tmv_link_file)
-    print '    ',tmv_link
+    print('    ',tmv_link)
 
     if sys.platform.find('darwin') != -1:
         # The Mac BLAS library is notoriously sketchy.  In particular, we have discovered that it
@@ -1764,33 +1870,33 @@ int main()
         try:
             p = subprocess.Popen(['xcodebuild','-version'], stdout=subprocess.PIPE)
             xcode_version = p.stdout.readlines()[0].split()[1]
-            print 'XCode version is',xcode_version
+            print('XCode version is',xcode_version)
         except:
             # Don't require the user to have xcode installed.
             xcode_version = None
-            print 'Unable to determine XCode version'
+            print('Unable to determine XCode version')
         if ((int(major) > 10 or int(minor) >= 7) and '-latlas' not in tmv_link and
                 ('-lblas' in tmv_link or '-lcblas' in tmv_link)):
-            print 'WARNING: The Apple BLAS library has been found not to be thread safe on'
-            print '         Mac OS versions 10.7+, even across multiple processes (i.e. not'
-            print '         just multiple threads in the same process.)  The symptom is that'
-            print '         `scons tests` may hang when running nosetests using multiple'
-            print '         processes.'
+            print('WARNING: The Apple BLAS library has been found not to be thread safe on')
+            print('         Mac OS versions 10.7+, even across multiple processes (i.e. not')
+            print('         just multiple threads in the same process.)  The symptom is that')
+            print('         `scons tests` may hang when running nosetests using multiple')
+            print('         processes.')
             if xcode_version is None:
                 # If we couldn't run xcodebuild, then don't give any more information about this.
                 pass
             elif xcode_version < '5.1':
-                print '         This seems to have been partially fixed with XCode 5.1, so we'
-                print '         recommend upgrading to the latest XCode version.  However, even'
-                print '         with 5.1, some systems still seem to have problems.'
+                print('         This seems to have been partially fixed with XCode 5.1, so we')
+                print('         recommend upgrading to the latest XCode version.  However, even')
+                print('         with 5.1, some systems still seem to have problems.')
                 env['BAD_BLAS'] = True
             else:
-                print '         This seems to have been partially fixed with XCode 5.1, so there'
-                print '         is a good chance you will not have any problems.  But there are'
-                print '         still occasional systems that fail when using multithreading with'
-                print '         programs or modules that link to the BLAS library (such as GalSim).'
-                print '         If you do have problems, the solution is to recompile TMV with'
-                print '         the SCons option "WITH_BLAS=false".'
+                print('         This seems to have been partially fixed with XCode 5.1, so there')
+                print('         is a good chance you will not have any problems.  But there are')
+                print('         still occasional systems that fail when using multithreading with')
+                print('         programs or modules that link to the BLAS library (such as GalSim).')
+                print('         If you do have problems, the solution is to recompile TMV with')
+                print('         the SCons option "WITH_BLAS=false".')
 
     # ParseFlags doesn't know about -fopenmp being a LINKFLAG, so it
     # puts it into CCFLAGS instead.  Move it over to LINKFLAGS before
@@ -1826,17 +1932,17 @@ def GetNCPU():
     """
     # Linux, Unix and MacOS:
     if hasattr(os, 'sysconf'):
-        if os.sysconf_names.has_key('SC_NPROCESSORS_ONLN'):
+        if 'SC_NPROCESSORS_ONLN' in os.sysconf_names:
             # Linux & Unix:
             ncpus = os.sysconf('SC_NPROCESSORS_ONLN')
             if isinstance(ncpus, int) and ncpus > 0:
                 return ncpus
         else: # OSX:
             import subprocess
-            p = subprocess.Popen(['sysctl','-n','hw.ncpu'],stdout=subprocess.PIPE,shell=True)
+            p = subprocess.Popen(['sysctl -n hw.ncpu'],stdout=subprocess.PIPE,shell=True)
             return int(p.stdout.read().strip())
     # Windows:
-    if os.environ.has_key('NUMBER_OF_PROCESSORS'):
+    if 'NUMBER_OF_PROCESSORS' in os.environ:
         ncpus = int(os.environ['NUMBER_OF_PROCESSORS'])
         if ncpus > 0:
             return ncpus
@@ -1856,11 +1962,11 @@ def DoConfig(env):
 
     # If not explicit, set number of jobs according to number of CPUs
     if env.GetOption('num_jobs') != 1:
-        print "Using specified number of jobs =",env.GetOption('num_jobs')
+        print("Using specified number of jobs =",env.GetOption('num_jobs'))
     else:
         env.SetOption('num_jobs', GetNCPU())
         if env.GetOption('num_jobs') != 1:
-            print "Determined that a good number of jobs =",env.GetOption('num_jobs')
+            print("Determined that a good number of jobs =",env.GetOption('num_jobs'))
 
     # The basic flags for this compiler if not explicitly specified
     BasicCCFlags(env)
@@ -1868,14 +1974,14 @@ def DoConfig(env):
     # Some extra flags depending on the options:
     #if env['WITH_OPENMP']:
     if False:  # We don't use OpenMP anywhere, so don't bother with this.
-        print 'Using OpenMP'
+        print('Using OpenMP')
         AddOpenMPFlag(env)
     if not env['DEBUG']:
-        print 'Debugging turned off'
+        print('Debugging turned off')
         env.AppendUnique(CPPDEFINES=['NDEBUG'])
     else:
         if env['TMV_DEBUG']:
-            print 'TMV Extra Debugging turned on'
+            print('TMV Extra Debugging turned on')
             env.AppendUnique(CPPDEFINES=['TMV_EXTRA_DEBUG'])
 
     import SCons.SConf
@@ -1936,7 +2042,7 @@ def BuildExecutableScript(target, source, env):
         f.write( '#!' + env['PYTHON'] + '\n' )
         f.write(source[i].get_contents())
         f.close()
-        os.chmod(str(target[i]),0775)
+        os.chmod(str(target[i]),0o775)
 
 
 #
@@ -1953,21 +2059,21 @@ if env['IMPORT_ENV']:
 # Check for unknown variables in case something is misspelled
 unknown = opts.UnknownVariables()
 if unknown and not env['USE_UNKNOWN_VARS']:
-    print 'Unknown variables:', unknown.keys()
-    print 'If you are sure these are right (e.g. you want to set some SCons parameters'
-    print 'that are not in the list of GalSim parameters given by scons -h)'
-    print 'then you can override this check with USE_UNKNOWN_VARS=true'
+    print('Unknown variables:', unknown.keys())
+    print('If you are sure these are right (e.g. you want to set some SCons parameters')
+    print('that are not in the list of GalSim parameters given by scons -h)')
+    print('then you can override this check with USE_UNKNOWN_VARS=true')
     ErrorExit()
 
 if any(opt.default != env[opt.key] for opt in opts.options):
-    print 'Using the following (non-default) scons options:'
+    print('Using the following (non-default) scons options:')
     for opt in opts.options:
         if (opt.default != env[opt.key]):
-            print '   %s = %s'%(opt.key,env[opt.key])
-    print 'These can be edited directly in the file %s.'%config_file
-    print 'Type scons -h for a full list of available options.'
+            print('   %s = %s'%(opt.key,env[opt.key]))
+    print('These can be edited directly in the file %s.'%config_file)
+    print('Type scons -h for a full list of available options.')
 else:
-    print 'Using the default scons options'
+    print('Using the default scons options')
 
 opts.Save(config_file,env)
 Help(opts.GenerateHelpText(env))
@@ -1979,12 +2085,12 @@ env['all_builds'] = []
 
 if not GetOption('help'):
 
-    # If there is a gs.error file, then this means the last run ended
+    # If there is a gs_error.txt file, then this means the last run ended
     # in an error, so we don't want to cache any of the configuration
     # tests from that run in case things in the environment changed.
     # (SCons isn't usually very good at detecting these kinds of changes.)
-    if os.path.exists("gs.error"):
-        os.remove("gs.error")
+    if os.path.exists("gs_error.txt"):
+        os.remove("gs_error.txt")
         ClearCache()
 
     if env['PYTHON'] == '':
@@ -1996,7 +2102,7 @@ if not GetOption('help'):
         python = which(python)
         if python == None:
             ErrorExit('Specified python not found in path: %s' % env['PYTHON'])
-    print 'Using python = ',python
+    print('Using python = ',python)
     env['PYTHON'] = python
 
     # Set PYPREFIX if not given:
@@ -2008,7 +2114,7 @@ if not GetOption('help'):
             cmd += "print(distutils.sysconfig.get_python_lib(prefix='%s'))\""%(env['PREFIX'])
             p = subprocess.Popen([cmd],stdout=subprocess.PIPE,shell=True)
             env['PYPREFIX'] = p.stdout.read().strip()
-            print 'Using PYPREFIX generated from PREFIX = ',env['PYPREFIX']
+            print('Using PYPREFIX generated from PREFIX = ',env['PYPREFIX'])
         else:
             # On Macs, the regular python lib is usually writable, so it works fine for
             # installing the python modules.
@@ -2016,7 +2122,7 @@ if not GetOption('help'):
             cmd += "print(distutils.sysconfig.get_python_lib())\""
             p = subprocess.Popen([cmd],stdout=subprocess.PIPE,shell=True)
             env['PYPREFIX'] = p.stdout.read().strip()
-            print 'Using default PYPREFIX = ',env['PYPREFIX']
+            print('Using default PYPREFIX = ',env['PYPREFIX'])
 
     # Set up the configuration
     DoConfig(env)
@@ -2058,8 +2164,8 @@ if not GetOption('help'):
     # Print out anything we've put into the final_messages list.
     def FinalMessages(target, source, env):
         for msg in env['final_messages']:
-            print
-            print msg
+            print()
+            print(msg)
 
     env['BUILDERS']['FinalMessages'] = Builder(action = FinalMessages)
     final = env.FinalMessages(target='#/final', source=None)

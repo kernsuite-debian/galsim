@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -40,13 +40,11 @@ class ScatteredImageBuilder(ImageBuilder):
 
         @returns xsize, ysize
         """
-        if logger:
-            logger.debug('image %d: Building Scattered: image, obj = %d,%d',
-                         image_num,image_num,obj_num)
+        logger.debug('image %d: Building Scattered: image, obj = %d,%d',
+                     image_num,image_num,obj_num)
 
         self.nobjects = self.getNObj(config, base, image_num)
-        if logger:
-            logger.debug('image %d: nobj = %d',image_num,self.nobjects)
+        logger.debug('image %d: nobj = %d',image_num,self.nobjects)
 
         # These are allowed for Scattered, but we don't use them here.
         extra_ignore = [ 'image_pos', 'world_pos', 'stamp_size', 'stamp_xsize', 'stamp_ysize',
@@ -100,6 +98,7 @@ class ScatteredImageBuilder(ImageBuilder):
         full_image.setOrigin(base['image_origin'])
         full_image.wcs = wcs
         full_image.setZero()
+        base['current_image'] = full_image
 
         if 'image_pos' in config and 'world_pos' in config:
             raise AttributeError("Both image_pos and world_pos specified for Scattered image.")
@@ -124,20 +123,18 @@ class ScatteredImageBuilder(ImageBuilder):
             # This is our signal that the object was skipped.
             if stamps[k] is None: continue
             bounds = stamps[k].bounds & full_image.bounds
-            if logger:
-                logger.debug('image %d: full bounds = %s',image_num,str(full_image.bounds))
-                logger.debug('image %d: stamp %d bounds = %s',image_num,k,str(stamps[k].bounds))
-                logger.debug('image %d: Overlap = %s',image_num,str(bounds))
+            logger.debug('image %d: full bounds = %s',image_num,str(full_image.bounds))
+            logger.debug('image %d: stamp %d bounds = %s',image_num,k,str(stamps[k].bounds))
+            logger.debug('image %d: Overlap = %s',image_num,str(bounds))
             if bounds.isDefined():
                 full_image[bounds] += stamps[k][bounds]
             else:
-                if logger:
-                    logger.warning(
-                        "Object centered at (%d,%d) is entirely off the main image,\n"%(
-                            stamps[k].bounds.center().x, stamps[k].bounds.center().y) +
-                        "whose bounds are (%d,%d,%d,%d)."%(
-                            full_image.bounds.xmin, full_image.bounds.xmax,
-                            full_image.bounds.ymin, full_image.bounds.ymax))
+                logger.info(
+                    "Object centered at (%d,%d) is entirely off the main image,\n"%(
+                        stamps[k].bounds.center().x, stamps[k].bounds.center().y) +
+                    "whose bounds are (%d,%d,%d,%d)."%(
+                        full_image.bounds.xmin, full_image.bounds.xmax,
+                        full_image.bounds.ymin, full_image.bounds.ymax))
 
         # Bring the image so far up to a flat noise variance
         current_var = galsim.config.FlattenNoiseVariance(
@@ -171,6 +168,7 @@ class ScatteredImageBuilder(ImageBuilder):
         @param current_var  The current noise variance in each postage stamps.
         @param logger       If given, a logger object to log progress.
         """
+        base['current_noise_image'] = base['current_image']
         galsim.config.AddSky(base,image)
         galsim.config.AddNoise(base,image,current_var,logger)
 
@@ -184,6 +182,7 @@ class ScatteredImageBuilder(ImageBuilder):
 
         @returns the number of objects
         """
+        orig_index_key = base.get('index_key',None)
         base['index_key'] = 'image_num'
         base['image_num'] = image_num
 
@@ -192,10 +191,10 @@ class ScatteredImageBuilder(ImageBuilder):
             nobj = galsim.config.ProcessInputNObjects(base)
             if nobj is None:
                 raise AttributeError("Attribute nobjects is required for image.type = Scattered")
-            return nobj
         else:
             nobj = galsim.config.ParseValue(config,'nobjects',base,int)[0]
-            return nobj
+        base['index_key'] = orig_index_key
+        return nobj
 
 # Register this as a valid image type
 from .image import RegisterImageType

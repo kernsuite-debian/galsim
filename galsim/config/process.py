@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2016 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -19,6 +19,7 @@
 import os
 import galsim
 import logging
+import copy
 
 
 # Python 2.6 doesn't include OrderedDict natively.  There is a package ordereddict that you
@@ -34,6 +35,29 @@ except ImportError:
         OrderedDict = dict
 
 
+def MergeConfig(config1, config2, logger=None):
+    """
+    Merge config2 into config1 such that it has all the information from either config1 or
+    config2 including places where both input dicts have some of a field defined.
+    e.g. config1 has image.pixel_scale, and config2 has image.noise.
+            Then the returned dict will have both.
+    For real conflicts (the same value in both cases), config1's value takes precedence
+    """
+    logger = LoggerWrapper(logger)
+    for (key, value) in config2.items():
+        if not key in config1:
+            # If this key isn't in config1 yet, just add it
+            config1[key] = copy.deepcopy(value)
+        elif isinstance(value,dict) and isinstance(config1[key],dict):
+            # If they both have a key, first check if the values are dicts
+            # If they are, just recurse this process and merge those dicts.
+            MergeConfig(config1[key],value,logger)
+        else:
+            # Otherwise config1 takes precedence
+            logger.info("Not merging key %s from the base config, since the later "
+                        "one takes precedence",key)
+            pass
+
 def ReadYaml(config_file):
     """Read in a YAML configuration file and return the corresponding dicts.
 
@@ -43,14 +67,11 @@ def ReadYaml(config_file):
     (usually small) modifications to the base dict for each job.  See demo6.yaml, demo8.yaml and
     demo9.yaml in the GalSim/examples directory for example usage.
 
-    On output, base_config is the dict for the first document if there are multiple documents.
-    Then all_config is a list of all the other documents that should be joined with base_dict
-    for each job to be processed.  If there is only one document defined, base_dict will be
-    empty, and all_config will be a list of one dict, which is the one to use.
+    The return value will be a list of dicts, one dict for each job to be done.
 
     @param config_file      The name of the configuration file to read.
 
-    @returns (base_config, all_config)
+    @returns list of config dicts
     """
     import yaml
 
@@ -82,23 +103,22 @@ def ReadYaml(config_file):
         # Break off the first one if more than one:
         base_config = all_config[0]
         all_config = all_config[1:]
-    else:
-        # Else just use an empty base_config dict.
-        base_config = {}
+        # And merge it into each of the other dicts
+        for c in all_config:
+            MergeConfig(c, base_config)
 
-    return base_config, all_config
+    return all_config
 
 
 def ReadJson(config_file):
     """Read in a JSON configuration file and return the corresponding dicts.
 
     A JSON file only defines a single dict.  However to be parallel to the functionality of
-    ReadYaml, the output is base_config, all_config, where base_config is an empty dict,
-    and all_config is a list with a single item, which is the dict defined by the JSON file.
+    ReadYaml, the output is a list with a single item, which is the dict defined by the JSON file.
 
     @param config_file      The name of the configuration file to read.
 
-    @returns (base_config, all_config)
+    @returns [config_dict]
     """
     import json
 
@@ -106,8 +126,8 @@ def ReadJson(config_file):
         try:
             # cf. http://stackoverflow.com/questions/6921699/can-i-get-json-to-load-into-an-ordereddict-in-python
             config = json.load(f, object_pairs_hook=OrderedDict)
-        except TypeError:
-            # for python2.6, json doesn't come with the object_pairs_hook, so 
+        except TypeError:  # pragma: no cover
+            # for python2.6, json doesn't come with the object_pairs_hook, so
             # try using simplejson, and if that doesn't work, just use a regular dict.
             # Also, it seems that if the above line raises an exception, the file handle
             # is not left at the beginning, so seek back to 0.
@@ -118,12 +138,32 @@ def ReadJson(config_file):
             except ImportError:
                 config = json.load(f)
 
-    # JSON files are just processed as is.  This is equivalent to having an empty 
-    # base_config, so we just do that and use the same structure.
-    base_config = {}
-    all_config = [ config ]
+    # JSON files only ever define a single job, but we need to return a list with this one item.
+    return [config]
 
-    return base_config, all_config
+
+def ConvertNones(config):
+    """Convert any items whose value is 'None' to None.
+
+    To allow some parameters to be set to None in the config dict (e.g. in a list, where only
+    some values need to be None), we convert all values == 'None' to None.
+
+    @param config       The config dict to process
+    """
+    if isinstance(config, dict):
+        keys = config.keys()
+    else:
+        keys = range(len(config))
+
+    for key in keys:
+        # Recurse to lower levels, if any
+        if isinstance(config[key],(list,dict)):
+            ConvertNones(config[key])
+
+        # Convert any Nones at this level
+        elif config[key] == 'None':
+            config[key] = None
+
 
 def ReadConfig(config_file, file_type=None, logger=None):
     """Read in a configuration file and return the corresponding dicts.
@@ -134,13 +174,14 @@ def ReadConfig(config_file, file_type=None, logger=None):
     (usually small) modifications to the base dict for each job.  See demo6.yaml, demo8.yaml and
     demo9.yaml in the GalSim/examples directory for example usage.
 
-    On output, base_config is the dict for the first document if there are multiple documents.
-    Then all_config is a list of all the other documents that should be joined with base_dict
-    for each job to be processed.  If there is only one document defined, base_dict will be
-    empty, and all_config will be a list of one dict, which is the one to use.
+    On output, the returned list will have an entry for each job to be done.  If there are
+    multiple documents, then the first dict is a merge of the first two documents, the
+    second a merge of the first and third, and so on.  Each job includes the first document
+    merged with each subseqent document in turn.  If there is only one document defined,
+    the returned list will have one element, which is this dict.
 
-    A JSON file does not have this feature, but to be consistent, we always return the tuple
-    (base_config, all_config).
+    A JSON file does not have this feature, but to be consistent, we always return a list,
+    which would only have one element in this case.
 
     Also, we actually read in the config file into an OrderedDict.  The main advantage of
     this is for the truth catalog.  This lets the columns be in the same order as the entries
@@ -151,8 +192,9 @@ def ReadConfig(config_file, file_type=None, logger=None):
                             infer the file type from the extension.]
     @param logger           If given, a logger object to log progress. [default: None]
 
-    @returns (base_config, all_config)
+    @returns list of config dicts
     """
+    logger = LoggerWrapper(logger)
     # Determine the file type from the extension if necessary:
     if file_type is None:
         import os
@@ -162,25 +204,25 @@ def ReadConfig(config_file, file_type=None, logger=None):
         else:
             # Let YAML be the default if the extension is not .y* or .j*.
             file_type = 'yaml'
-        if logger:
-            logger.debug('File type determined to be %s', file_type)
+        logger.debug('File type determined to be %s', file_type)
     else:
-        if logger:
-            logger.debug('File type specified to be %s', file_type)
+        logger.debug('File type specified to be %s', file_type)
 
     if file_type == 'yaml':
-        if logger:
-            logger.info('Reading YAML config file %s', config_file)
-        return galsim.config.ReadYaml(config_file)
+        logger.info('Reading YAML config file %s', config_file)
+        config = galsim.config.ReadYaml(config_file)
     else:
-        if logger:
-            logger.info('Reading JSON config file %s', config_file)
-        return galsim.config.ReadJson(config_file)
+        logger.info('Reading JSON config file %s', config_file)
+        config = galsim.config.ReadJson(config_file)
+
+    galsim.config.ConvertNones(config)
+
+    return config
 
 
 def RemoveCurrent(config, keep_safe=False, type=None, index_key=None):
     """
-    Remove any "current values" stored in the config dict at any level.
+    Remove any "current" values stored in the config dict at any level.
 
     @param config       The configuration dict.
     @param keep_safe    Should current values that are marked as safe be preserved?
@@ -198,6 +240,7 @@ def RemoveCurrent(config, keep_safe=False, type=None, index_key=None):
     # Recurse to lower levels, if any
     force = False  # If lower levels removed anything, then force removal at this level as well.
     for key in config:
+        if key[0] == '_': continue  # These are our own implementation details, not the normal dict.
         if isinstance(config[key],list):
             for item in config[key]:
                 force = RemoveCurrent(item, keep_safe, type, index_key) or force
@@ -209,17 +252,20 @@ def RemoveCurrent(config, keep_safe=False, type=None, index_key=None):
         index_key = None
 
     # Delete the current_val at this level, if any
-    if ( 'current_val' in config
-          and not (keep_safe and config['current_safe'])
-          and (type is None or ('type' in config and config['type'] == type))
-          and (index_key is None or config['current_index_key'].startswith(index_key)) ):
-        del config['current_val']
-        del config['current_safe']
-        del config['current_index']
-        del config['current_value_type']
-        return True
-    else:
-        return force
+    if 'current' in config:
+        cval, csafe, ctype, cindex, cindex_key = config['current']
+        if (not (keep_safe and csafe)
+                and (type is None or ('type' in config and config['type'] == type))
+                and (index_key is None or cindex_key.startswith(index_key))):
+            del config['current']
+            return True
+    return force
+
+top_level_fields = ['psf', 'gal', 'stamp', 'image', 'input', 'output',
+                    'eval_variables', 'root', 'modules', 'profile']
+
+rng_fields = ['rng', 'obj_num_rng', 'image_num_rng', 'file_num_rng',
+              'obj_num_rngs', 'image_num_rngs', 'file_num_rngs']
 
 def CopyConfig(config):
     """
@@ -229,32 +275,21 @@ def CopyConfig(config):
     config dict back to the root process.  We do this a few different times, so encapsulate
     the copy semantics once here.
 
-    @param config           The configuration dict to copy. 
+    @param config           The configuration dict to copy.
 
     @returns a deep copy of the config dict.
     """
     import copy
     config1 = copy.copy(config)
-  
+
     # Make sure the input_manager isn't in the copy
     config1.pop('input_manager',None)
 
-    # Now deepcopy all the regular config fields to make sure things like current_val don't
-    # get clobbered by two processes writing to the same dict.
-    if 'gal' in config:
-        config1['gal'] = copy.deepcopy(config['gal'])
-    if 'psf' in config:
-        config1['psf'] = copy.deepcopy(config['psf'])
-    if 'pix' in config:
-        config1['pix'] = copy.deepcopy(config['pix'])
-    if 'image' in config:
-        config1['image'] = copy.deepcopy(config['image'])
-    if 'input' in config:
-        config1['input'] = copy.deepcopy(config['input'])
-    if 'output' in config:
-        config1['output'] = copy.deepcopy(config['output'])
-    if 'eval_variables' in config:
-        config1['eval_variables'] = copy.deepcopy(config['eval_variables'])
+    # Now deepcopy all the regular config fields to make sure things like current don't
+    # get clobbered by two processes writing to the same dict.  Also the rngs.
+    for field in top_level_fields + rng_fields:
+        if field in config:
+            config1[field] = copy.deepcopy(config[field])
 
     return config1
 
@@ -291,7 +326,14 @@ class LoggerWrapper(object):
     @param logger       The logger object to wrap.
     """
     def __init__(self, logger):
-        self.logger = logger
+        if isinstance(logger,LoggerWrapper):
+            self.logger = logger.logger
+        else:
+            self.logger = logger
+
+    def __bool__(self):
+        return self.logger is not None
+    __nonzero__ = __bool__
 
     def debug(self, *args, **kwargs):
         if self.logger and self.logger.isEnabledFor(logging.DEBUG):
@@ -302,15 +344,22 @@ class LoggerWrapper(object):
             self.logger.info(*args, **kwargs)
 
     def warning(self, *args, **kwargs):
-        if self.logger and self.logger.isEnabledFor(logging.WARN):
+        if self.logger and self.logger.isEnabledFor(logging.WARNING):
             self.logger.warning(*args, **kwargs)
 
     def error(self, *args, **kwargs):
         if self.logger and self.logger.isEnabledFor(logging.ERROR):
             self.logger.error(*args, **kwargs)
 
+    def log(self, lvl, *args, **kwargs):
+        if self.logger and self.logger.isEnabledFor(lvl):
+            self.logger.log(lvl, *args, **kwargs)
+
     def isEnabledFor(self, *args, **kwargs):
-        return self.logger.isEnabledFor(*args,**kwargs)
+        if self.logger:
+            return self.logger.isEnabledFor(*args,**kwargs)
+        else:
+            return False
 
 
 def UpdateNProc(nproc, ntot, config, logger=None):
@@ -327,115 +376,175 @@ def UpdateNProc(nproc, ntot, config, logger=None):
 
     @returns the number of processes to use.
     """
+    logger = LoggerWrapper(logger)
     # First if nproc < 0, update based on ncpu
     if nproc <= 0:
         # Try to figure out a good number of processes to use
         try:
             from multiprocessing import cpu_count
             nproc = cpu_count()
-            if logger:
-                logger.debug("ncpu = %d.",nproc)
+            logger.debug("ncpu = %d.",nproc)
         except KeyboardInterrupt:
             raise
-        except:
-            if logger:
-                logger.warning("nproc <= 0, but unable to determine number of cpus.")
-                logger.warning("Using single process")
+        except Exception as e:  # pragma: no cover
+            logger.warning("nproc <= 0, but unable to determine number of cpus.")
+            logger.warning("Caught error: %s",e)
+            logger.warning("Using single process")
             nproc = 1
- 
+
     # Second, make sure we aren't already in a multiprocessing mode
     if nproc > 1 and 'current_nproc' in config:
-        if logger:
-            logger.debug("Already multiprocessing.  Ignoring image.nproc")
+        logger.debug("Already multiprocessing.  Ignoring image.nproc")
         nproc = 1
 
     # Finally, don't try to use more processes than jobs.  It wouldn't fail or anything.
     # It just looks bad to have 3 images processed with 8 processes or something like that.
     if nproc > ntot:
-        if logger:
-            logger.debug("There are only %d jobs to do.  Reducing nproc to %d."%(ntot,ntot))
+        logger.debug("There are only %d jobs to do.  Reducing nproc to %d."%(ntot,ntot))
         nproc = ntot
     return nproc
 
 
-def SetupConfigRNG(config, seed_offset=0):
-    """Set up the RNG in the config dict.
-
-    - Setup config['image']['random_seed'] if necessary
-    - Set config['rng'] based on appropriate random_seed 
-
-    @param config           The configuration dict.
-    @param seed_offset      An offset to use relative to what config['image']['random_seed'] gives.
-                            [default: 0]
-
-    @returns the seed used to initialize the RNG.
-    """
-    # Normally, random_seed is just a number, which really means to use that number
+def ParseRandomSeed(config, param_name, base, seed_offset):
+    # Normally, random_seed parameter is just a number, which really means to use that number
     # for the first item and go up sequentially from there for each object.
-    # However, we allow for random_seed to be a gettable parameter, so for the 
+    # However, we allow for random_seed to be a gettable parameter, so for the
     # normal case, we just convert it into a Sequence.
-    if ( 'image' in config 
-         and 'random_seed' in config['image'] 
-         and not isinstance(config['image']['random_seed'],dict) ):
+    if isinstance(config[param_name], int):
          # The "first" is actually the seed value to use for anything at file or image scope
          # using the obj_num of the first object in the file or image.  Seeds for objects
          # will start at 1 more than this.
-         first = galsim.config.ParseValue(config['image'], 'random_seed', config, int)[0]
-         config['image']['random_seed'] = { 
+         first = galsim.config.ParseValue(config, param_name, base, int)[0]
+         config[param_name] = {
                  'type' : 'Sequence',
                  'index_key' : 'obj_num',
                  'first' : first
          }
 
-    index_key = config['index_key']
-
-    # If we are starting a new file, clear out the existing rngs.
-    if index_key == 'file_num':
-        for key in ['seed', 'rng', 'obj_num_rng', 'image_num_rng', 'file_num_rng']:
-            config.pop(key, None)
-
-    if 'random_seed' in config['image']:
-        if index_key == 'obj_num':
-            # The normal case
-            seed = galsim.config.ParseValue(config['image'], 'random_seed', config, int)[0]
-        else:
-            # If we are setting either the file_num or image_num rng, we need to be careful.
-            config['index_key'] = 'obj_num'
-            obj_num = config['obj_num']
-            if 'start_obj_num' in config:
-                config['obj_num'] = config['start_obj_num']
-            seed = galsim.config.ParseValue(config['image'], 'random_seed', config, int)[0]
-            config['index_key'] = index_key
-            config['obj_num'] = obj_num
-        seed += seed_offset
+    index_key = base['index_key']
+    if index_key == 'obj_num':
+        # The normal case
+        seed = galsim.config.ParseValue(config, param_name, base, int)[0]
     else:
-        seed = 0
+        # If we are setting either the file_num or image_num rng, we need to be careful.
+        base['index_key'] = 'obj_num'
+        seed = galsim.config.ParseValue(config, param_name, base, int)[0]
+        base['index_key'] = index_key
+    seed += seed_offset
 
     # Normally, the file_num rng and the image_num rng can be the same.  So if seed
     # comes out the same as what we already built, then just use the existing file_num_rng.
-    if index_key == 'image_num' and 'file_num_rng' in config and seed == config.get('seed',None):
-        rng = config['file_num_rng']
+    if index_key == 'image_num' and seed == base.get('file_num_seed',None):
+        rng = base['file_num_rng']
     else:
-        config['seed'] = seed
         rng = galsim.BaseDeviate(seed)
-        config['rng'] = rng
 
-    # Also save this rng as 'file_num_rng' or 'image_num_rng' or 'obj_num_rng' according
-    # to whatever the index_key is.
-    config[index_key + '_rng'] = rng
+    return seed, rng
 
-    # This can be present for efficiency, since GaussianDeviates produce two values at a time, 
+def PropagateIndexKeyRNGNum(config, index_key, rng_num):
+    """Propagate any index_key or rng_num specification in a dict to all sub-fields
+    """
+    if isinstance(config, list):
+        for item in config:
+            PropagateIndexKeyRNGNum(item, index_key, rng_num)
+        return
+
+    if not isinstance(config, dict): return
+
+    if 'index_key' in config:
+        index_key = config['index_key']
+    elif index_key is not None:
+        config['index_key'] = index_key
+
+    if 'rng_num' in config:
+        rng_num = config['rng_num']
+    elif rng_num is not None:
+        config['rng_num'] = rng_num
+
+    for key, field in config.items():
+        if key[0] == '_': continue
+        PropagateIndexKeyRNGNum(field, index_key, rng_num)
+
+
+def SetupConfigRNG(config, seed_offset=0, logger=None):
+    """Set up the RNG in the config dict.
+
+    - Setup config['image']['random_seed'] if necessary
+    - Set config['rng'] and other related values based on appropriate random_seed
+
+    @param config           The configuration dict.
+    @param seed_offset      An offset to use relative to what config['image']['random_seed'] gives.
+                            [default: 0]
+    @param logger           If given, a logger object to log progress. [default: None]
+
+    @returns the seed used to initialize the RNG.
+    """
+    logger = LoggerWrapper(logger)
+
+    # If we are starting a new file, clear out the existing rngs.
+    index_key = config['index_key']
+    if index_key == 'file_num':
+        for key in rng_fields + ['seed', 'obj_num_seed', 'image_num_seed', 'file_num_seed']:
+            config.pop(key, None)
+
+    # This can be present for efficiency, since GaussianDeviates produce two values at a time,
     # so it is more efficient to not create a new GaussianDeviate object each time.
     # But if so, we need to remove it now.
-    config.pop('gd',None)
+    config.pop('gd', None)
 
-    return seed
- 
+    # All fields have a default index_key that they would normally use as well as a default
+    # rng_num = 0 if the random_seed is a list.  But we allow users to specify alternate values
+    # of index_key and/or rng_num at any level in the dict.  We want that specification to
+    # propagate down to lower levels from that point forward.  The easiest way to do so is to
+    # explicitly run through the dict once and propagate any index_key and/or rng_num fields
+    # to all sub-fields.
+    if not config.get('_propagated_index_key_rng_num',False):
+        logger.debug('Propagating any index_key or rng_num specifications')
+        for field in config.values():
+            PropagateIndexKeyRNGNum(field, None, None)
+        config['_propagated_index_key_rng_num'] = True
+
+    if 'image' not in config or 'random_seed' not in config['image']:
+        logger.debug('obj %d: No random_seed specified.  Using /dev/urandom',
+                     config.get('obj_num',0))
+        config['seed'] = 0
+        rng = galsim.BaseDeviate()
+        config['rng'] = rng
+        config[index_key + '_rng'] = rng
+        return 0
+
+    image = config['image']
+    # Normally, there is just one random_seed and it is just an integer.  However, sometimes
+    # it is useful to have 2 (or more) rngs going with different seed sequences.  To enable this,
+    # image.random_seed is allowed to be a list, each item of which may be either an integer or
+    # a dict defining an integer sequence.  If it is a list, we parse each item separately
+    # and then put the combined results into config['rng'] as a list.
+    if isinstance(image['random_seed'], list):
+        lst = image['random_seed']
+        seeds, rngs = zip(*[ParseRandomSeed(lst, i, config, seed_offset) for i in range(len(lst))])
+        config['seed'] = seeds[0]
+        config['rng'] = rngs[0]
+        config[index_key + '_seed'] = seeds[0]
+        config[index_key + '_rng'] = rngs[0]
+        config[index_key + '_rngs'] = rngs
+        logger.debug('obj %d: random_seed is a list. Initializing rngs with seeds %s',
+                     config.get('obj_num',0), seeds)
+        return seeds[0]
+    else:
+        seed, rng = ParseRandomSeed(image, 'random_seed', config, seed_offset)
+        config['seed'] = seed
+        config['rng'] = rng
+        config[index_key + '_seed'] = seed
+        config[index_key + '_rng'] = rng
+        logger.debug('obj %d: Initializing rng with seed %s', config.get('obj_num',0), seed)
+        return seed
+
+
 def ImportModules(config):
     """Import any modules listed in config['modules'].
 
     These won't be brought into the running scope of the config processing, but any side
-    effects of the import statements will persist.  In particular, these are allowed to 
+    effects of the import statements will persist.  In particular, these are allowed to
     register additional custom types that can then be used in the current config dict.
 
     @param config           The configuration dict.
@@ -472,13 +581,19 @@ def ParseExtendedKey(config, key):
     """
     # This is basically identical to the code for Dict.get(key) in catalog.py.
     chain = key.split('.')
-    d = config
-    while len(chain) > 1:
+    while True:
+        d = config
         k = chain.pop(0)
         try: k = int(k)
         except ValueError: pass
-        d = d[k]
-    return d, chain[0]
+        if len(chain) == 0: break
+        try:
+            config = d[k]
+        except (TypeError, KeyError):
+            # TypeError for the case where d is a float or Position2D, so d[k] is invalid.
+            # KeyError for the case where d is a dict, but k is not a valid key.
+            raise ValueError("Unable to parse extended key %s.  Field %s is invalid."%(key,k))
+    return d, k
 
 def GetFromConfig(config, key):
     """Get the value for the (possibly extended) key from a config dict.
@@ -492,8 +607,12 @@ def GetFromConfig(config, key):
 
     @returns the value of that key from the config.
     """
-    config, key = ParseExtendedKey(config, key)
-    return config[key]
+    d, k = ParseExtendedKey(config, key)
+    try:
+        value = d[k]
+    except Exception as e:
+        raise ValueError("Unable to parse extended key %s.  Field %s is invalid."%(key,k))
+    return value
 
 def SetInConfig(config, key, value):
     """Set the value of a (possibly extended) key in a config dict.
@@ -507,12 +626,15 @@ def SetInConfig(config, key, value):
 
     @returns the value of that key from the config.
     """
-    config, key = ParseExtendedKey(config, key)
+    d, k = ParseExtendedKey(config, key)
     if value == '':
         # This means remove it, if it is there.
-        config.pop(key,None)
+        d.pop(k,None)
     else:
-        config[key] = value
+        try:
+            d[k] = value
+        except Exception as e:
+            raise ValueError("Unable to parse extended key %s.  Field %s is invalid."%(key,k))
 
 
 def UpdateConfig(config, new_params):
@@ -527,51 +649,63 @@ def UpdateConfig(config, new_params):
         SetInConfig(config, key, value)
 
 
-def ProcessTemplate(config, logger=None):
-    """If the config dict has a 'template' item, read in the appropriate file and 
+def ProcessTemplate(config, base, logger=None):
+    """If the config dict has a 'template' item, read in the appropriate file and
     make any requested updates.
 
     @param config           The configuration dict.
+    @param base             The base configuration dict.
     @param logger           If given, a logger object to log progress. [default: None]
     """
+    logger = LoggerWrapper(logger)
     if 'template' in config:
         template_string = config.pop('template')
-        if logger:
-            logger.debug("Processing template specified as %s",template_string)
+        logger.debug("Processing template specified as %s",template_string)
+
+        # Parse the template string
         if ':' in template_string:
             config_file, field = template_string.split(':')
         else:
-            config_file = template_string
-            field = None
-        base, all_config = ReadConfig(config_file, logger=logger)
-        if base != {} or len(all_config) != 1:
-            raise RuntimeError("Template config file %s is not allowed to have multiple documents.",
-                               config_file)
+            config_file, field = template_string, None
+
+        # Read the config file if appropriate
+        if config_file != '':
+            template = ReadConfig(config_file, logger=logger)[0]
+        else:
+            template = base
+
+        # Pull out the specified field, if any
+        if field is not None:
+            template = GetFromConfig(template, field)
+
         # Copy over the template config into this one.
         new_params = config.copy()  # N.B. Already popped config['template'].
         config.clear()
-        if field is None:
-            config.update(all_config[0])
-        else:
-            config.update(GetFromConfig(all_config[0],field))
+        config.update(template)
 
         # Update the config with the requested changes
         UpdateConfig(config, new_params)
 
 
-def ProcessAllTemplates(config, logger=None):
+def ProcessAllTemplates(config, logger=None, base=None):
     """Check through the full config dict and process any fields that have a 'template' item.
 
     @param config           The configuration dict.
+    @param base             The base configuration dict.
     @param logger           If given, a logger object to log progress. [default: None]
     """
-    ProcessTemplate(config, logger)
+    if base is None: base = config
+    ProcessTemplate(config, base, logger)
     for (key, field) in config.items():
         if isinstance(field, dict):
-            ProcessAllTemplates(field, logger)
+            ProcessAllTemplates(field, logger, base)
+        elif isinstance(field, list):
+            for item in field:
+                if isinstance(item, dict):
+                    ProcessAllTemplates(item, logger, base)
 
 # This is the main script to process everything in the configuration dict.
-def Process(config, logger=None, njobs=1, job=1, new_params=None):
+def Process(config, logger=None, njobs=1, job=1, new_params=None, except_abort=False):
     """
     Do all processing of the provided configuration dict.  In particular, this
     function handles processing the output field, calling other functions to
@@ -590,7 +724,11 @@ def Process(config, logger=None, njobs=1, job=1, new_params=None):
     @param job              Which job should be worked on here (1..njobs). [default: 1]
     @param new_params       A dict of new parameter values that should be used to update the config
                             dict after any template loading (if any). [default: None]
+    @param except_abort     Whether to abort processing when a file raises an exception (True)
+                            or just report errors and continue on (False). [default: False]
     """
+    logger = LoggerWrapper(logger)
+    import pprint
     if njobs < 1:
         raise ValueError("Invalid number of jobs %d"%njobs)
     if job < 1:
@@ -599,8 +737,7 @@ def Process(config, logger=None, njobs=1, job=1, new_params=None):
         raise ValueError("Invalid job number %d.  Must be <= njobs (%d)"%(job,njobs))
 
     # First thing to do is deep copy the input config to make sure we don't modify the original.
-    import copy
-    config = copy.deepcopy(config)
+    config = CopyConfig(config)
 
     # Process any template specifications in the dict.
     ProcessAllTemplates(config, logger)
@@ -612,50 +749,35 @@ def Process(config, logger=None, njobs=1, job=1, new_params=None):
     # Import any modules if requested
     ImportModules(config)
 
-    # If we don't have a root specified yet, we generate it from the current script.
-    if 'root' not in config:
-        import inspect
-        script_name = os.path.basename(
-            inspect.getfile(inspect.currentframe())) # script filename (usually with path)
-        # Strip off a final suffix if present.
-        config['root'] = os.path.splitext(script_name)[0]
+    logger.debug("Final config dict to be processed: \n%s", pprint.pformat(config))
 
-    if logger:
-        import pprint
-        logger.debug("Final config dict to be processed: \n%s", pprint.pformat(config))
+    # Warn about any unexpected fields.
+    unexpected = [ k for k in config if k not in top_level_fields ]
+    if len(unexpected) > 0 and logger:
+        logger.warning("Warning: config dict contains the following unexpected fields: %s.",
+                       unexpected)
+        logger.warning("These fields are not (directly) processed by the config processing.")
 
-    # Make config['output'] exist if it doesn't yet.
-    if 'output' not in config:
-        config['output'] = {}
-    output = config['output']
-    if not isinstance(output, dict):
-        raise AttributeError("config.output is not a dict.")
-
-    # We need to know how many objects we'll need for each file (and each image within each file)
-    # to get the indexing correct for any sequence items.  (e.g. random_seed)
-    # If we use multiple processors and let the regular sequencing happen, 
-    # it will get screwed up by the multi-processing potentially happening out of order.
-    # Start with the number of files.
-    if 'nfiles' in output:
-        nfiles = galsim.config.ParseValue(output, 'nfiles', config, int)[0]
-    else:
-        nfiles = 1 
-    if logger:
-        logger.debug('nfiles = %d',nfiles)
+    # Determine how many files we will be processing in total.
+    # Usually, this is just output.nfiles, but different output types may define this differently.
+    nfiles = galsim.config.output.GetNFiles(config)
+    logger.debug('nfiles = %d',nfiles)
 
     if njobs > 1:
         # Start each job at file_num = nfiles * job / njobs
         start = nfiles * (job-1) // njobs
         end = nfiles * job // njobs
-        if logger:
-            logger.warning('Splitting work into %d jobs.  Doing job %d',njobs,job)
-            logger.warning('Building %d out of %d total files: file_num = %d .. %d',
-                           end-start,nfiles,start,end-1)
+        logger.warning('Splitting work into %d jobs.  Doing job %d',njobs,job)
+        logger.warning('Building %d out of %d total files: file_num = %d .. %d',
+                       end-start,nfiles,start,end-1)
         nfiles = end-start
     else:
         start = 0
 
-    galsim.config.BuildFiles(nfiles, config, file_num=start, logger=logger)
+    if nfiles == 1:
+        except_abort = True  # Mostly just so the message reads better.
+    galsim.config.BuildFiles(nfiles, config, file_num=start, logger=logger,
+                             except_abort=except_abort)
 
 
 def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
@@ -725,9 +847,8 @@ def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
 
         for task in iter(task_queue.get, 'STOP'):
             try :
-                if logger:
-                    logger.debug('%s: Received job to do %d %ss, starting with %s',
-                                 proc,len(task),item,task[0][1])
+                logger.debug('%s: Received job to do %d %ss, starting with %s',
+                             proc,len(task),item,task[0][1])
                 for kwargs, k in task:
                     t1 = time.time()
                     kwargs['config'] = config
@@ -740,16 +861,20 @@ def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
             except Exception as e:
                 import traceback
                 tr = traceback.format_exc()
-                if logger:
-                    logger.debug('%s: Caught exception: %s\n%s',proc,str(e),tr)
+                logger.debug('%s: Caught exception: %s\n%s',proc,str(e),tr)
                 results_queue.put( (e, k, tr, proc) )
-        if logger:
-            logger.debug('%s: Received STOP', proc)
-        if pr:
+        logger.debug('%s: Received STOP', proc)
+        if pr is not None:
             pr.disable()
-            s = io.StringIO()
-            sortby = 'tottime'
-            ps = pstats.Stats(pr,stream=s).sort_stats(sortby).reverse_order()
+            try:
+                from StringIO import StringIO
+            except ImportError:
+                from io import StringIO
+            s = StringIO()
+            sortby = 'time'  # Note: This is now called tottime, but time seems to be a valid
+                             # alias for this that is backwards compatible to older versions
+                             # of pstats.
+            ps = pstats.Stats(pr, stream=s).sort_stats(sortby).reverse_order()
             ps.print_stats()
             logger.error("*** Start profile for %s ***\n%s\n*** End profile for %s ***",
                          proc,s.getvalue(),proc)
@@ -757,8 +882,7 @@ def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
     njobs = sum([len(task) for task in tasks])
 
     if nproc > 1:
-        if logger:
-            logger.warning("Using %d processes for %s processing",nproc,item)
+        logger.warning("Using %d processes for %s processing",nproc,item)
 
         from multiprocessing import Process, Queue, current_process
         from multiprocessing.managers import BaseManager
@@ -771,6 +895,9 @@ def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
         # Temporarily mark that we are multiprocessing, so we know not to start another
         # round of multiprocessing later.
         config['current_nproc'] = nproc
+
+        if 'profile' in config and config['profile']:
+            logger.info("Starting separate profiling for each of the %d processes.",nproc)
 
         # The logger is not picklable, so we need to make a proxy for it so all the
         # processes can emit logging information safely.
@@ -803,15 +930,16 @@ def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
                 # res is really the exception, e
                 # t is really the traceback
                 # k is the index for the job that failed
-                if except_func is not None:
+                if except_func is not None:  # pragma: no branch
                     except_func(logger, proc, k, res, t)
-                if except_abort:
+                if except_abort or isinstance(res,KeyboardInterrupt):
                     for j in range(nproc):
                         p_list[j].terminate()
+                    del config['current_nproc']
                     raise res
             else:
                 # The normal case
-                if done_func is not None:
+                if done_func is not None:  # pragma: no branch
                     done_func(logger, proc, k, res, t)
                 results[k] = res
 
@@ -830,7 +958,7 @@ def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
         task_queue.close()
 
         # And clear this out, so we know that we're not multiprocessing anymore.
-        config['current_nproc'] = nproc
+        del config['current_nproc']
 
     else : # nproc == 1
         results = [ None ] * njobs
@@ -842,7 +970,7 @@ def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
                     kwargs['logger'] = logger
                     result = job_func(**kwargs)
                     t2 = time.time()
-                    if done_func is not None:
+                    if done_func is not None:  # pragma: no branch
                         done_func(logger, None, k, result, t2-t1)
                     results[k] = result
                 except KeyboardInterrupt:
@@ -850,13 +978,82 @@ def MultiProcess(nproc, config, job_func, tasks, item, logger=None,
                 except Exception as e:
                     import traceback
                     tr = traceback.format_exc()
-                    if except_func is not None:
+                    if except_func is not None: # pragma: no branch
                         except_func(logger, None, k, e, tr)
-                    if except_abort: raise
+                    if except_abort or isinstance(e,KeyboardInterrupt):
+                        raise
 
     # If there are any failures, then there will still be some Nones in the results list.
     # Remove them.
     results = [ r for r in results if r is not None ]
 
     return results
+
+
+valid_index_keys = [ 'obj_num_in_file', 'obj_num', 'image_num', 'file_num' ]
+
+def GetIndex(config, base, is_sequence=False):
+    """Return the index to use for the current object or parameter and the index_key.
+
+    First check for an explicit index_key value given by the user.
+    Then if base[index_key] is other than obj_num, use that.
+    Finally, if this is a sequence, default to 'obj_num_in_file', otherwise 'obj_num'.
+
+    @returns index, index_key
+    """
+    if 'index_key' in config:
+        index_key = config['index_key']
+        if index_key not in valid_index_keys:
+            raise AttributeError("Invalid index_key=%s."%index_key)
+    else:
+        index_key = base.get('index_key','obj_num')
+        if index_key == 'obj_num' and is_sequence:
+            index_key = 'obj_num_in_file'
+
+    if index_key == 'obj_num_in_file':
+        index = base.get('obj_num',0) - base.get('start_obj_num',0)
+        index_key = 'obj_num'
+    else:
+        index = base.get(index_key,0)
+
+    return index, index_key
+
+
+def GetRNG(config, base, logger=None, tag=None):
+    """Get the appropriate current rng according to whatever the current index_key is.
+
+    If a logger is provided, then it will emit a warning if there is no current rng setup.
+
+    @param config           The configuration dict for the current item being worked on.
+    @param base             The base configuration dict.
+    @param logger           If given, a logger object to log progress. [default: None]
+    @param tag              If given, an appropriate name for the current item to use ing the
+                            warning message. [default: None]
+
+    @returns either the appropriate rng for the current index_key or None
+    """
+    logger = LoggerWrapper(logger)
+    index, index_key = GetIndex(config, base)
+
+    if 'rng_num' in config:
+        rng_num = config['rng_num']
+        if int(rng_num) != rng_num:
+            raise ValueError("rng_num must be an integer")
+        if not (index_key + '_rngs') in base:
+            raise AttributeError("rng_num is only allowed when image.random_seed is a list")
+        rng = base.get(index_key + '_rngs', None)[int(rng_num)]
+    else:
+        rng = base.get(index_key + '_rng', None)
+
+    if rng is None:
+        rng = base.get('rng',None)
+
+    if rng is None and logger:
+        # Only report the warning the first time.
+        rng_tag = tag + '_reported_no_rng'
+        if rng_tag not in base:
+            base[rng_tag] = True
+            logger.warning("No base['rng'] available for %s.  Using /dev/urandom."%tag)
+
+    return rng
 
