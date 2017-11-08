@@ -24,7 +24,7 @@ X-Python-Version: >= 2.7
 Package: galsim-dev
 Section: libdevel
 Architecture: any
-Depends: libgalsim1.4 (= ${binary:Version}), ${misc:Depends}, ${python:Depends} 
+Depends: libgalsim1.5 (= ${binary:Version}), ${misc:Depends}, ${python:Depends} 
 Description: simulating images of astronomical objects
  GalSim is open-source software for simulating images of astronomical objects
  (stars, galaxies) in a variety of ways. The bulk of the calculations are
@@ -32,7 +32,7 @@ Description: simulating images of astronomical objects
  code can operate directly on "config" files, for those users who prefer not
  to work in python
 
-Package: libgalsim1.4
+Package: libgalsim1.5
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Replaces: galsim0
@@ -57,7 +57,7 @@ Description: simulating images of astronomical objects
 Package: galsim
 Architecture: any
 Depends: ${python:Depends}, ${shlibs:Depends}, ${misc:Depends}, python-galsim,
- libgalsim1.4 (= ${binary:Version})
+ libgalsim1.5 (= ${binary:Version})
 Description: simulating images of astronomical object
  GalSim is open-source software for simulating images of astronomical objects
  (stars, galaxies) in a variety of ways. The bulk of the calculations are

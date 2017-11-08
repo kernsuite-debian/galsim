@@ -15,7 +15,7 @@ override_dh_auto_clean:
 	$(SCONS) -c
 
 override_dh_auto_configure:
-	$(SCONS) PREFIX=$(DEB_DESTDIR)/usr TMV_LINK=/usr/share/tmv/tmv-link PYPREFIX=$(PYPREFIX)
+	$(SCONS) PREFIX=$(DEB_DESTDIR)/usr TMV_LINK=/usr/share/tmv/tmv-link PYPREFIX=$(PYPREFIX) || true
 
 override_dh_auto_install:
 	$(SCONS) install PREFIX=$(DEB_DESTDIR)/usr PYPREFIX=$(PYPREFIX)

@@ -1,3 +1,9 @@
+galsim (1.5.0-alpha-1kern1) xenial; urgency=medium
+
+  * Imported Upstream version 1.5.0-alpha
+
+ -- KERN packaging <packaging@kernsuite.info>  Tue, 07 Nov 2017 13:28:58 +0200
+
 galsim (1.4.4-1kern2) xenial; urgency=medium
 
   * fix lintian errors
