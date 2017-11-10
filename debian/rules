@@ -15,10 +15,10 @@ override_dh_auto_clean:
 	$(SCONS) -c
 
 override_dh_auto_configure:
-	$(SCONS) PREFIX=$(DEB_DESTDIR)/usr TMV_LINK=/usr/share/tmv/tmv-link PYPREFIX=$(PYPREFIX) || true
+	$(SCONS) PREFIX=$(DEB_DESTDIR)/usr TMV_DIR=/usr TMV_LINK=/usr/share/tmv/tmv-link PYPREFIX=$(PYPREFIX)
 
 override_dh_auto_install:
-	$(SCONS) install PREFIX=$(DEB_DESTDIR)/usr PYPREFIX=$(PYPREFIX)
+	$(SCONS) install PREFIX=$(DEB_DESTDIR)/usr TMV_DIR=/usr PYPREFIX=$(PYPREFIX)
 	gzip -d debian/tmp/usr/share/galsim/WFIRST-AFTA_Pupil_Mask_C5_20141010_PLT.fits.gz
 	gzip -d debian/tmp/usr/share/galsim/wfc_F814W.dat.gz
 

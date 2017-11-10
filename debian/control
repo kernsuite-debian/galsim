@@ -4,19 +4,20 @@ Priority: optional
 Maintainer: Gijs Molenaar (launchpad ppa build key) <gijs@pythonic.nl>
 Build-Depends:
  debhelper (>= 9.0.0),
+ dh-python,
  scons,
- libfftw3-dev,
- libboost-dev,
  tmv-dev,
+ libfftw3-dev,
+ libatlas-base-dev,
+ libboost-dev,
+ libboost-python-dev,
  libpython-dev,
+ python2.7-dev,
  python-numpy,
  python-astropy,
  python-future,
  python-yaml,
- libboost-python-dev,
- python-pandas,
- dh-python,
- python-all
+ python-pandas
 Standards-Version: 3.9.7
 Homepage: https://github.com/GalSim-developers/GalSim
 X-Python-Version: >= 2.7
@@ -24,7 +25,7 @@ X-Python-Version: >= 2.7
 Package: galsim-dev
 Section: libdevel
 Architecture: any
-Depends: libgalsim1.5 (= ${binary:Version}), ${misc:Depends}, ${python:Depends} 
+Depends: libgalsim1.5 (= ${binary:Version}), ${misc:Depends}, ${python:Depends}
 Description: simulating images of astronomical objects
  GalSim is open-source software for simulating images of astronomical objects
  (stars, galaxies) in a variety of ways. The bulk of the calculations are

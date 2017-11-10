@@ -1,6 +1,7 @@
 galsim (1.5.0-alpha-1kern1) xenial; urgency=medium
 
   * Imported Upstream version 1.5.0-alpha
+  * add missing cblas dependency
 
  -- KERN packaging <packaging@kernsuite.info>  Tue, 07 Nov 2017 13:28:58 +0200
 
