@@ -4,7 +4,7 @@ files
 *.debhelper.log
 *.substvars
 *.debhelper
-libgalsim1.4/
+libgalsim*/
 galsim/
 galsim-dev/
 python-galsim/
