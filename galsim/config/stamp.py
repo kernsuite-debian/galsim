@@ -225,7 +225,7 @@ def SetupConfigStampSize(config, xsize, ysize, image_pos, world_pos, logger=None
     # image center.
     if isinstance(world_pos, galsim.CelestialCoord):
         # Then project this position relative to the image center.
-        world_center = config['wcs'].toWorld(config['image_center'])
+        world_center = config.get('world_center', config['wcs'].toWorld(config['image_center']))
         world_pos = world_center.project(world_pos, projection='gnomonic')
 
     if image_pos is not None:
@@ -745,7 +745,7 @@ class StampBuilder(object):
             # Set the origin appropriately
             stamp_center = base['stamp_center']
             if stamp_center:
-                bounds = bounds.shift(stamp_center - bounds.center())
+                bounds = bounds.shift(stamp_center - bounds.center)
             else:
                 bounds = bounds.shift(base.get('image_origin',galsim.PositionI(1,1)) -
                                       galsim.PositionI(bounds.xmin, bounds.ymin))
@@ -790,7 +790,7 @@ class StampBuilder(object):
         """
         # If the object has a noise attribute, then check if we need to do anything with it.
         current_var = 0.  # Default if not overwritten
-        if prof is not None and hasattr(prof,'noise'):
+        if prof is not None and prof.noise is not None:
             if 'image' in base and 'noise' in base['image']:
                 noise = base['image']['noise']
                 if 'whiten' in noise:
@@ -1013,4 +1013,3 @@ def RegisterStampType(stamp_type, builder):
     valid_stamp_types[stamp_type] = builder
 
 RegisterStampType('Basic', StampBuilder())
-
