@@ -5,13 +5,17 @@ API Changes
 -----------
 
 - Simplified the return value of galsim.config.ReadConfig. (#580)
+- Changed RealGalaxyCatalog methods `getGal` and `getPSF` to return
+  `GSObject`s instead of `Image`s; added `getGalImage` and `getPSFImage` to
+  enable former behavior (#640)
+- Moved packaged `SED` and `Bandpass` files from `.../share/galsim/` to
+  `.../share/galsim/SEDs` and `.../share/galsim/bandpasses` respectively.
+  (#640)
 - Changed the dimensions of `SED` from [photons/wavelength-interval] to either
   [photons/wavelength-interval/area/time] or [1] (dimensionless).
   `ChromaticObject`s representing stars or galaxies take SEDs with the former
   dimensions; those representing a chromatic PSF take SEDs with the latter
   dimensions. (#789)
-- Added keywords `exptime` and `area` to `drawImage()` to indicate the image
-  exposure time and telescope collecting area. (#789)
 - Added restrictions to `ChromaticObject`s and `SED`s consistent with
   dimensional analysis.  E.g., only `ChromaticObject`s with dimensionful SEDs
   can be drawn. (#789)
@@ -35,19 +39,21 @@ API Changes
   there may be slight changes to your code required.  See the doc strings of
   these functions for more information. (#865)
 - Switched galsim.Image(image) to make a copy of the image rather than a view.
-  If you want a view, you should use the more intuitive image.view().  (#873)
-- Changed behaviour of the `preload` option in RealGalaxyCatalog and 
+  If you want a view, you should use the more intuitive image.view(). (#873)
+- Changed behaviour of the `preload` option in RealGalaxyCatalog and
   COSMOSCatalog to preload data in memory, not just the fits HDUs (#884)
 
 
 Dependency Changes
 ------------------
 - Added `astropy` as a required dependency for chromatic functionality. (#789)
+- Switched `scons tests` test runner from `nosetests` to `pytest`. (#892)
 
 
 Bug Fixes
 ---------
 
+- Fixed parity mistake in configuration of WFIRST focal plane. (#675)
 - Added checks to `SED`s and `ChromaticObject`s for dimensional sanity. (#789)
 - Fixed an error in the magnification calculated by NFWHalo.getLensing(). (#580)
 - Fixed bug when whitening noise in images based on COSMOS training datasets
@@ -56,6 +62,9 @@ Bug Fixes
 - Fixed bug in image.subImage that could cause seg faults in some cases. (#848)
 - Fixed minor bug in shear == implementation. (#865)
 - Fixed bug in GSFitsWCS that made `toImage` sometimes fail to converge. (#880)
+- Added check to `SED.atRedshift` for valid redshifts. (#905)
+- Added exception for disjoint wave_list intersection in combine_wave_list.
+  (#905)
 
 
 Deprecated Features
@@ -78,13 +87,91 @@ Deprecated Features
 - Deprecated ability to create multiple PhaseScreenPSFs with single call
   to makePSF, since it is now just as efficient to call makePSF multiple
   times. (#824)
+- Deprecated the use of `np.trapz` and `galsim.integ.mipdt` as valid
+  integration rules for use by `ImageIntegrator`s, replaced by
+  `galsim.integ.trapzRule` and `galsim.integ.midptRule`. (#887)
+- Changed the Angle.rad method to a property, so now you should write
+  angle.rad rather than angle.rad() to get the value in radians.  Note: the
+  return value is a subclass of float, so angle.rad() still works but gives a
+  deprecation warning.  But it should work in all ways as a float. (#904)
+- Deprecated the functions HMS_Angle and DMS_Angle. These are now classmethods
+  of the Angle class: Angle.from_hms and Angle.from_dms, respectively. (#904)
+- Deprecated the function ShapeletSize and FitShapelet. This functionality
+  is not in classmethods of the Shapelet class: `Shapelet.size(order)` and
+  `Shapelet.fit(image)`. Also, direct use of LVector is deprecated, and it
+  will be removed in version 2.0. (#904)
+- The use of the Interpolant base class as a factory function is now deprecated.
+  Instead, use `Interpolant.from_name(name)`. (#904)
+- Use of the `SBProfile` attribute of GSObject is deprecated. The attribute
+  `_sbp` takes its place, but that should be considered an implementation
+  detail that users should not need to access, not part of the public API.
+  If you think you have a use case that is not covered by the public API
+  (either for functionality of efficiency), please open an issue. (#904)
+- Deprecated making a GSObject directly rather than making one of the
+  subclasses. Again, this should not be necessary, but if you have a use
+  case that you think requires this, please open an issue. (#904)
+- Use of the `image` attribute of Image is deprecated, being replaced by
+  `_image`, which is similarly now officially an implementation detail that
+  users should not need to access. (#904)
+- PhotonArray.addTo(image) now takes a regular galsim.Image for its argument,
+  not a C++-layer image object. (#904)
+- Deprecated the various PhotonArray.get* functions as unwieldy equivalents
+  of the cleaner pa.x, pa,flux, etc. properties.  Similarly the setPhoton
+  function is deprecated in lieu of setting each value separately. (#904)
+- Deprecated `calculateFlux(bandpass=None)` for computing bolometric flux.
+  Users of this feature can still obtain a psuedo-bolometric flux by using
+  an explicit bolometric Bandpass. (#905)
+- Deprecated the various `get*` methods that are equivalent to a property,
+  which is the more Pythonic and preferred syntax.  e.g. obj.getFlux() ->
+  obj.flux, gaussian.getSigma() -> gaussian.sigma, shear.getG1() -> shear.g1.
+  There were many such methods, especially in the various kinds of GSObjects,
+  as well as in Image, Bounds, Shear, and the Noise classes. (#904)
+- Deprecated ChromaticObject.obj -> _obj, which is now an implementation
+  detail, not something that users should need to use. (#904)
+- Changed the objlist attribute of ChromaticSum and ChromaticConvolution to
+  obj_list to conform to similar attributes in other classes. (#904)
+- Deprecated OpticalScreen.coef_array -> _coef_array, which is now an
+  implementation detail. (#904)
+- Changed a number of GSObject methods to properties to be more pythonic:
+    - obj.stepK() -> obj.stepk
+    - obj.maxK() -> obj.maxk
+    - obj.nyquistScale() -> obj.nyquist_scale
+    - obj.centroid() -> obj.centroid
+    - obj.getPositiveFlux() -> obj.positive_flux
+    - obj.getNegativeFlux() -> obj.negative_flux
+    - obj.maxSB() -> obj.max_sb
+    - obj.isAxisymmetric() -> obj.is_axisymmetric
+    - obj.isAnalyticX() -> obj.is_analytic_x
+    - obj.isAnalyticK() -> obj.is_analytic_k
+    - obj.hasHardEdges() -> obj.has_hard_edges
+  The method versions still work for now, but are deprecated. (#904)
+- Renamed the ChromaticObject.centroid(bandpass) method to calculateCentroid
+  to be more clear that a calculation is required and to avoid confusion with
+  the centroid property of (non-chromatic) GSObjects. (#904)
+- Changed a few Image methods to properties to be more pythonic:
+    - image.center() -> image.center
+    - image.trueCenter() -> image.true_center
+    - image.origin() -> image.origin
+  Likewise, the same named methods for Bounds have also been similarly changed.
+  The method versions still work for now, but are deprecated. (#904)
 
 
 New Features
 ------------
 
 - Added new surface brightness profile, 'DeltaFunction'. This represents a
-  point source with a flux value.
+  point source with a flux value. (#533)
+- Added `ChromaticRealGalaxy`, which can use multi-band HST-images to model
+  realistic galaxies, including color gradients (#640)
+- Added `CovarianceSpectrum` to propagate noise through
+  `ChromaticRealGalaxy` (#640)
+- Updated packaged bandpasses and SEDs and associated download scripts (#640)
+- Added HST bandpasses covering AEGIS and CANDELS surveys (#640)
+- Added `drawKImage` method for `ChromaticObject` and `CorrelatedNoise` (#640)
+- Updated WFIRST WCS (focal plane location, orientation, configuration) and
+  some other basic numbers in the module to reflect WFIRST Cycle 7 design.  A
+  detailed listing of what was and was not updated can be found in the issue
+  page (#675)
 - Added support for reading in of unsigned int Images (#715)
 - Added a new Sensor class hierarchy, including SiliconSensor, which models
   the repulsion of incoming electrons by the electrons already accumulated on
@@ -101,6 +188,8 @@ New Features
   PowerSpectrum, UVFunction, RaDecFunction, Bandpass, and SED.  Some of these
   had allowed `np.` for numpy commands, but inconsistently, so now they should
   all reliably work with any of these three module names. (#776)
+- Added keywords `exptime` and `area` to `drawImage()` to indicate the image
+  exposure time and telescope collecting area. (#789)
 - `SED`s can now be constructed with flexible units via the `astropy.units`
   module. (#789).
 - Added new surface brightness profile, 'InclinedExponential'. This represents
@@ -175,6 +264,7 @@ New Features
 - Added `recenter` option to drawKImage to optionally not recenter the input
   image at (0,0).  The default `recenter=True` is consistent with how this
   function has worked in previous versions. (#873)
+- Drawing chromatic objects now uses significantly less RAM. (#887)
 
 
 New config features

@@ -44,16 +44,14 @@ impact of each detector effect separately) they take up a bit over 2G.
 New features introduced in this demo:
 - image.quantize()
 - obj = galsim.DeltaFunction(flux)
-- Routines to include WFIRST-specific detector effects:
-  - galsim.wfirst.addReciprocityFailure(image)
-  - galsim.wfirst.applyNonlinearity(image)
-  - galsim.wfirst.applyIPC(image)
-- Routines to get basic information about WFIRST bandpasses, PSFs, and WCS:
-  - galsim.wfirst.getBandpasses()
-  - galsim.wfirst.getPSF()
-  - galsim.wfirst.getWCS()
-  - galsim.wfirst.allowedPos()
-  - galsim.wfirst.getSkyLevel()
+- galsim.wfirst.addReciprocityFailure(image)
+- galsim.wfirst.applyNonlinearity(image)
+- galsim.wfirst.applyIPC(image)
+- galsim.wfirst.getBandpasses()
+- galsim.wfirst.getPSF()
+- galsim.wfirst.getWCS()
+- galsim.wfirst.allowedPos()
+- galsim.wfirst.getSkyLevel()
 """
 
 import numpy
@@ -72,7 +70,6 @@ diff_mode = False
 def main(argv):
     # Where to find and output data.
     path, filename = os.path.split(__file__)
-    datapath = os.path.abspath(os.path.join(path, "data/"))
     outpath = os.path.abspath(os.path.join(path, "output/"))
 
     # Just use a few galaxies, to save time.  Note that we are going to put 4000 galaxy images into

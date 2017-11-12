@@ -20,15 +20,15 @@ from __future__ import print_function
 import os
 import numpy as np
 from galsim_test_helpers import *
-path, filename = os.path.split(__file__)
-bppath = os.path.abspath(os.path.join(path, "../examples/data/"))
-sedpath = os.path.abspath(os.path.join(path, "../share/"))
 try:
     import galsim
 except ImportError:
     import sys
     sys.path.append(os.path.abspath(os.path.join(path, "..")))
     import galsim
+
+bppath = os.path.join(galsim.meta_data.share_dir, "bandpasses")
+sedpath = os.path.join(galsim.meta_data.share_dir, "SEDs")
 
 # from pylab import *
 # def plotme(image):
@@ -59,15 +59,9 @@ shear_g1 = 0.01
 shear_g2 = 0.02
 
 # load a filter
-bandpass = (galsim.Bandpass(os.path.join(bppath, 'LSST_r.dat'), 'nm')
-            .truncate(relative_throughput=1e-3)
-            .thin(rel_err=1e-3))
-bandpass_g = (galsim.Bandpass(os.path.join(bppath, 'LSST_g.dat'), 'nm')
-              .truncate(relative_throughput=1e-3)
-              .thin(rel_err=1e-3))
-bandpass_z = (galsim.Bandpass(os.path.join(bppath, 'LSST_z.dat'), 'nm')
-              .truncate(relative_throughput=1e-3)
-              .thin(rel_err=1e-3))
+bandpass = (galsim.Bandpass(os.path.join(bppath, 'LSST_r.dat'), 'nm'))
+bandpass_g = (galsim.Bandpass(os.path.join(bppath, 'LSST_g.dat'), 'nm'))
+bandpass_z = (galsim.Bandpass(os.path.join(bppath, 'LSST_z.dat'), 'nm'))
 
 # load some spectra
 bulge_SED = (galsim.SED(os.path.join(sedpath, 'CWW_E_ext.sed'), wave_type='ang',
@@ -125,20 +119,13 @@ def test_draw_add_commutativity():
     # final profile
     final = galsim.Convolve([GS_gal, PSF])
     GS_image = galsim.ImageD(stamp_size, stamp_size, scale=pixel_scale)
+    GS_kimage = galsim.ImageCD(stamp_size, stamp_size, scale=pixel_scale)
     t2 = time.time()
     GS_image = final.drawImage(image=GS_image)
+    GS_kimage = final.drawKImage(image=GS_kimage)
     t3 = time.time()
-    print('GS_object.drawImage() took {0} seconds.'.format(t3-t2))
+    print('GS_object drawImage, drawKImage took {0} seconds.'.format(t3-t2))
     # plotme(GS_image)
-
-    # As an aside, check for appropriate tests of 'integrator' argument.
-    try:
-        np.testing.assert_raises(TypeError, final.drawImage, bandpass, method='no_pixel',
-                                 integrator='midp') # minor misspelling
-        np.testing.assert_raises(TypeError, final.drawImage, bandpass, method='no_pixel',
-                                 integrator=galsim.integ.midpt)
-    except ImportError:
-        print('The assert_raises tests require nose')
 
     #------------------------------------------------------------------------------
     # Use galsim.chromatic to generate chromaticity.  Internally, this module draws
@@ -174,9 +161,10 @@ def test_draw_add_commutativity():
     # final profile
     chromatic_final = galsim.Convolve([chromatic_gal, chromatic_PSF])
     chromatic_image = galsim.ImageD(stamp_size, stamp_size, scale=pixel_scale)
+    chromatic_kimage = galsim.ImageCD(stamp_size, stamp_size, scale=pixel_scale)
     # use chromatic parent class to draw without ChromaticConvolution acceleration...
     t4 = time.time()
-    integrator = galsim.integ.ContinuousIntegrator(galsim.integ.midpt, N=N, use_endpoints=False)
+    integrator = galsim.integ.ContinuousIntegrator(galsim.integ.midptRule, N=N, use_endpoints=False)
     # NB. You cannot use ChromaticObject.drawImage() here, since it will automatically farm out to
     #     the ChromaticConvolution version of drawImage rather than respecting the
     #     ChromaticObject specification.  Using super() doesn't seem to work either.  So I just
@@ -185,17 +173,53 @@ def test_draw_add_commutativity():
     #     implementation, so those had to be switched as well.
     galsim.ChromaticObject.drawImage(chromatic_final, bandpass, image=chromatic_image,
                                      integrator=integrator)
+    galsim.ChromaticObject.drawKImage(chromatic_final, bandpass, image=chromatic_kimage,
+                                      integrator=integrator)
     t5 = time.time()
-    print('ChromaticObject.drawImage() took {0} seconds.'.format(t5-t4))
+    print('ChromaticObject drawImage, drawKImage took {0} seconds.'.format(t5-t4))
     # plotme(chromatic_image)
 
-    peak1 = chromatic_image.array.max()
+    # Check error handling of too few sample points
+    try:
+        integrator = galsim.integ.ContinuousIntegrator(galsim.integ.midptRule, N=1,
+                                                       use_endpoints=False)
+        np.testing.assert_raises(ValueError, chromatic_final.drawImage, bandpass,
+                                 integrator=integrator)
+        integrator = galsim.integ.ContinuousIntegrator(galsim.integ.trapzRule, N=1,
+                                                       use_endpoints=False)
+        np.testing.assert_raises(ValueError, chromatic_final.drawImage, bandpass,
+                                 integrator=integrator)
+    except ImportError:
+        print("The assert_raises tests require nose")
 
+
+    peak = chromatic_image.array.max()
     printval(GS_image, chromatic_image)
     np.testing.assert_array_almost_equal(
-        chromatic_image.array/peak1, GS_image.array/peak1, 6,
+        chromatic_image.array/peak, GS_image.array/peak, 6,
         err_msg="Directly computed chromatic image disagrees with image created using "
                 +"galsim.chromatic")
+
+    kpeak = chromatic_kimage.array.real.max()
+    np.testing.assert_array_almost_equal(
+        chromatic_kimage.array/kpeak, GS_kimage.array/kpeak, 6,
+        err_msg="Directly computed chromatic kimage disagrees with kimage created using "
+                +"galsim.chromatic")
+
+    # As an aside, check for appropriate tests of 'integrator' argument.
+    try:
+        np.testing.assert_raises(TypeError, chromatic_final.drawImage, bandpass, method='no_pixel',
+                                 integrator='midp') # minor misspelling
+        np.testing.assert_raises(TypeError, chromatic_final.drawKImage, bandpass,
+                                 integrator='midp') # minor misspelling
+        np.testing.assert_raises(TypeError, chromatic_final.drawImage, bandpass, method='no_pixel',
+                                 integrator=galsim.integ.midpt)
+        np.testing.assert_raises(TypeError, chromatic_final.drawKImage, bandpass,
+                                 integrator=galsim.integ.midpt)
+    except ImportError:
+        print('The assert_raises tests require nose')
+
+
 
 
 @timer
@@ -234,8 +258,10 @@ def test_ChromaticConvolution_InterpolatedImage():
     print('Flux when integrating first, convolving second: {0}'.format(II_flux))
     print('Flux when convolving first, integrating second: {0}'.format(D_flux))
     printval(II_image, D_image)
+    # This used to work with decimal=5, but is apparently sensitive to the particular details of the
+    # bandpass thinning used.  decimal=4 is still good though.
     np.testing.assert_array_almost_equal(
-        II_image.array, D_image.array, 5,
+        II_image.array, D_image.array, 4,
         err_msg="ChromaticConvolution draw not equivalent to regular draw")
 
     # Check flux scaling
@@ -366,9 +392,9 @@ def test_dcr_moments():
     dR_analytic = (R_bulge[1] - R_disk[1]) * 180.0/np.pi * 3600
     dV_analytic = (V_bulge[1,1] - V_disk[1,1]) * (180.0/np.pi * 3600)**2
 
-    # also compute dR_analytic using ChromaticObject.centroid()
-    centroid1 = final1.centroid(bandpass)
-    centroid2 = final2.centroid(bandpass)
+    # also compute dR_analytic using ChromaticObject.calculateCentroid()
+    centroid1 = final1.calculateCentroid(bandpass)
+    centroid2 = final2.calculateCentroid(bandpass)
     dR_centroid = (centroid1 - centroid2).y
 
     print('image delta R:    {0}'.format(dR_image))
@@ -380,7 +406,7 @@ def test_dcr_moments():
                                    err_msg="dRbar Shift from DCR doesn't match analytic formula")
     np.testing.assert_almost_equal(dR_analytic, dR_centroid, 10,
                                    err_msg="direct dRbar calculation doesn't match"
-                                           +" ChromaticObject.centroid()")
+                                           +" ChromaticObject.calculateCentroid()")
     np.testing.assert_almost_equal(dV_image, dV_analytic, 5,
                                    err_msg="dV Shift from DCR doesn't match analytic formula")
 
@@ -664,7 +690,7 @@ def test_ChromaticConvolution_of_ChromaticConvolution():
     e = galsim.Convolve(a, b)
     f = galsim.Convolve(c, d)
     g = galsim.Convolve(e, f)
-    if any(isinstance(h, galsim.ChromaticConvolution) for h in g.objlist):
+    if any(isinstance(h, galsim.ChromaticConvolution) for h in g.obj_list):
         raise AssertionError("ChromaticConvolution did not expand ChromaticConvolution argument")
 
 
@@ -897,11 +923,11 @@ def test_ChromaticObject_rotate():
     # mxx = int(dw (1 + 0.3 cos(2theta(w))) * F(w))  / int(dw F(w))
     # myy = int(dw (1 - 0.3 cos(2theta(w))) * F(w))  / int(dw F(w))
     # mxy = int(dw 0.3 sin(2theta(w)) * F(w))  / int(dw F(w))
-    rot_mxx = galsim.integ.int1d(lambda w: (1.+0.3*np.cos(2*rotation(w).rad())) * bp(w),500,700)
+    rot_mxx = galsim.integ.int1d(lambda w: (1.+0.3*np.cos(2*rotation(w))) * bp(w),500,700)
     rot_mxx /= galsim.integ.int1d(lambda w: bp(w),500,700)
-    rot_myy = galsim.integ.int1d(lambda w: (1.-0.3*np.cos(2*rotation(w).rad())) * bp(w),500,700)
+    rot_myy = galsim.integ.int1d(lambda w: (1.-0.3*np.cos(2*rotation(w))) * bp(w),500,700)
     rot_myy /= galsim.integ.int1d(lambda w: bp(w),500,700)
-    rot_mxy = galsim.integ.int1d(lambda w: (0.3*np.sin(2*rotation(w).rad())) * bp(w),500,700)
+    rot_mxy = galsim.integ.int1d(lambda w: (0.3*np.sin(2*rotation(w))) * bp(w),500,700)
     rot_mxy /= galsim.integ.int1d(lambda w: bp(w),500,700)
     rot_e1 = (rot_mxx-rot_myy)/(rot_mxx+rot_myy)
     rot_e2 = (2*rot_mxy)/(rot_mxx+rot_myy)
@@ -916,10 +942,10 @@ def test_ChromaticObject_rotate():
 
     # Repeat using transform rather than rotate
     gal3 = cgal.transform(
-                lambda w: np.cos(rotation(w).rad()),
-                lambda w: -np.sin(rotation(w).rad()),
-                lambda w: np.sin(rotation(w).rad()),
-                lambda w: np.cos(rotation(w).rad()) )
+                lambda w: np.cos(rotation(w)),
+                lambda w: -np.sin(rotation(w)),
+                lambda w: np.sin(rotation(w)),
+                lambda w: np.cos(rotation(w)) )
     im3 = gal3.drawImage(bp, scale=pixel_scale, dtype=float, method='no_pixel')
     mom = galsim.utilities.unweighted_moments(im3)
     np.testing.assert_almost_equal((mom['Mxx']-mom['Myy'])/(mom['Mxx']+mom['Myy']), rot_e1, decimal=4)
@@ -1112,7 +1138,8 @@ def test_analytic_integrator():
     """Test that the analytic (i.e., not sampled) versions of SEDs and Bandpasses produce the
     same results as the sampled versions.
     """
-    psf = galsim.Moffat(fwhm=1.0, beta=2.7)
+    # Make sure to use something non-separable so the ImageIntegrators actually get triggered.
+    psf = galsim.ChromaticObject(galsim.Moffat(fwhm=1.0, beta=2.7)).dilate(lambda w:(w/500)**1.1)
 
     # pure analytic
     band1 = galsim.Bandpass('1', 'nm', blue_limit=500, red_limit=750)
@@ -1120,9 +1147,13 @@ def test_analytic_integrator():
     gal1 = galsim.Gaussian(fwhm=1.0) * sed1
     final1 = galsim.Convolve(gal1, psf)
     image1 = galsim.ImageD(32, 32, scale=0.2)
+    kimage1 = galsim.ImageCD(32, 32, scale=0.2)
+    kimage1.setCenter(0,0)  # Necessary when adding to image
     assert len(band1.wave_list) == 0
     assert len(sed1.wave_list) == 0
-    final1.drawImage(band1, image=image1)
+    # Gratuitously use add_to_image=True so we test that branch.  Initial image is 0.
+    final1.drawImage(band1, image=image1, add_to_image=True)
+    final1.drawKImage(band1, image=kimage1, add_to_image=True)
 
     # try making the SED sampled
     band2 = band1
@@ -1135,9 +1166,11 @@ def test_analytic_integrator():
     gal2 = galsim.Gaussian(fwhm=1.0) * sed2
     final2 = galsim.Convolve(gal2, psf)
     image2 = galsim.ImageD(32, 32, scale=0.2)
+    kimage2 = galsim.ImageCD(32, 32, scale=0.2)
     assert len(band2.wave_list) == 0
     assert len(sed2.wave_list) != 0
     final2.drawImage(band1, image=image2)
+    final2.drawKImage(band1, image=kimage2)
 
     # try making the Bandpass sampled
     sed3 = sed1
@@ -1145,9 +1178,11 @@ def test_analytic_integrator():
     gal3 = galsim.Gaussian(fwhm=1.0) * sed3
     final3 = galsim.Convolve(gal3, psf)
     image3 = galsim.ImageD(32, 32, scale=0.2)
+    kimage3 = galsim.ImageCD(32, 32, scale=0.2)
     assert len(band3.wave_list) != 0
     assert len(sed3.wave_list) == 0
     final3.drawImage(band3, image=image3)
+    final3.drawKImage(band3, image=kimage3)
 
     printval(image1, image2)
     np.testing.assert_array_almost_equal(image1.array, image2.array, 5,
@@ -1155,6 +1190,20 @@ def test_analytic_integrator():
     printval(image1, image3)
     np.testing.assert_array_almost_equal(image1.array, image3.array, 5,
                                          "Analytic integrator doesn't match sample integrator")
+
+    np.testing.assert_array_almost_equal(kimage1.array, kimage2.array, 5,
+                                         "Analytic integrator doesn't match sample integrator")
+    np.testing.assert_array_almost_equal(kimage1.array, kimage3.array, 5,
+                                         "Analytic integrator doesn't match sample integrator")
+
+    # Test that attempting to use SampleIntegrator with analytic sed, bandpass raises an Error:
+    try:
+        np.testing.assert_raises(
+            AttributeError, final1.drawImage, band1,
+            integrator=galsim.integ.SampleIntegrator(rule=galsim.integ.trapzRule))
+    except ImportError:
+        print('The assert_raises tests require nose')
+
 
 
 @timer
@@ -1195,21 +1244,29 @@ def test_separable_ChromaticSum():
     # 1) check that 2 summands with same SED make a separable sum.
     cgal1 = mono_gal1 * bulge_SED + mono_gal2 * bulge_SED
     img1 = galsim.ImageD(32, 32, scale=0.2)
+    kimg1 = galsim.ImageCD(32, 32, scale=0.5)
     if not cgal1.separable:
         raise AssertionError("failed to identify separable ChromaticSum")
 
     # check that drawing the profile works as expected
     final1 = galsim.Convolve(cgal1, psf)
     final1.drawImage(bandpass, image=img1)
+    final1.drawKImage(bandpass, image=kimg1)
 
     img1b = img1.copy()
+    kimg1b = kimg1.copy()
     component1 = galsim.Convolve(mono_gal1*bulge_SED, psf)
     component1.drawImage(bandpass, image=img1b)
+    component1.drawKImage(bandpass, image=kimg1b)
+
     component2 = galsim.Convolve(mono_gal2*bulge_SED, psf)
     component2.drawImage(bandpass, image=img1b, add_to_image=True)
+    component2.drawKImage(bandpass, image=kimg1b, add_to_image=True)
 
     np.testing.assert_array_almost_equal(img1.array, img1b.array, 5,
                                          "separable ChromaticSum not correctly drawn")
+    np.testing.assert_array_almost_equal(kimg1.array, kimg1b.array, 5,
+                                         "separable ChromaticSum not correctly k-drawn")
     do_pickle(final1)
 
     # 2) Check flux scaling
@@ -1237,7 +1294,7 @@ def test_separable_ChromaticSum():
     if cgal3.separable:
         raise AssertionError("failed to identify inseparable ChromaticSum")
     # check that its objlist contains a separable Chromatic and a separable ChromaticSum
-    types = dict((o.__class__, o) for o in cgal3.objlist)
+    types = dict((o.__class__, o) for o in cgal3.obj_list)
     if galsim.ChromaticTransformation not in types or galsim.ChromaticSum not in types:
         raise AssertionError("failed to process list of objects with repeated SED")
 
@@ -1275,7 +1332,7 @@ def test_separable_ChromaticSum():
 
 @timer
 def test_centroid():
-    """Test the ChromaticObject.centroid function."""
+    """Test the ChromaticObject.calculateCentroid function."""
     sed = galsim.SED('wave', wave_type='nm', flux_type='fphotons')
     bp = galsim.Bandpass('wave', 'nm', blue_limit=0, red_limit=1)
     shift_fn = lambda w: (w, 0)
@@ -1285,15 +1342,15 @@ def test_centroid():
     # galaxy.  The shift function contributes an additional factor of wavelength to the x-centroid
     # integrand.  The end result is that the x-centroid should be:
     # int(w^3, 0, 1) / int(w^2, 0, 1) = (1/4)/(1/3) = 3/4.
-    centroid = gal.centroid(bp)
-    np.testing.assert_almost_equal(centroid.x, 0.75, 5, "ChromaticObject.centroid() failed")
-    np.testing.assert_almost_equal(centroid.y, 0.0, 5, "ChromaticObject.centroid() failed")
+    cen = gal.calculateCentroid(bp)
+    np.testing.assert_almost_equal(cen.x, 0.75, 5, "ChromaticObject.calculateCentroid() failed")
+    np.testing.assert_almost_equal(cen.y, 0.0, 5, "ChromaticObject.calculateCentroid() failed")
 
     # Now check the centroid sampling integrator...
     gal.wave_list = np.linspace(0.0, 1.0, 500)
-    centroid = gal.centroid(bp)
-    np.testing.assert_almost_equal(centroid.x, 0.75, 5, "ChromaticObject.centroid() failed")
-    np.testing.assert_almost_equal(centroid.y, 0.0, 5, "ChromaticObject.centroid() failed")
+    cen = gal.calculateCentroid(bp)
+    np.testing.assert_almost_equal(cen.x, 0.75, 5, "ChromaticObject.calculateCentroid() failed")
+    np.testing.assert_almost_equal(cen.y, 0.0, 5, "ChromaticObject.calculateCentroid() failed")
 
 
 @timer
@@ -1370,6 +1427,14 @@ def test_interpolated_ChromaticObject():
         im_interp.array, im_exact.array, decimal=4,
         err_msg='Interpolated ChromaticObject results differ for exact vs. interpolated (midpoint)')
 
+    # Check kimage with midpoint rule too, also non-default.
+    kscale = 2*np.pi/(scale*40)
+    kim_exact = exact_obj.drawKImage(bandpass, scale=kscale, nx=40, ny=40)
+    kim_interp = interp_obj.drawKImage(bandpass, scale=kscale, nx=40, ny=40, integrator='midpoint')
+    np.testing.assert_allclose(
+        kim_interp.array, kim_exact.array, rtol=0, atol=1e-4*kim_exact.array.real.max(),
+        err_msg='Interpolated ChromaticObject results differ for exact vs. interpolated (midpoint)')
+
     # Check that we can turn interpolation off and on at will.
     other_psf = interp_psf.deinterpolated
     other_obj = galsim.Convolve(star, other_psf)
@@ -1434,6 +1499,16 @@ def test_interpolated_ChromaticObject():
         im_interp.array, im_exact.array, decimal=3,
         err_msg='ChromaticObject results differ for interpolated vs. exact'
         ' when convolving with ChromaticSum')
+
+    # Check that InterpolatedChromaticObject.drawImage works.  Need an exact object with
+    # an SED for this to work.
+    exact_psf *= bulge_SED
+    interp_psf = exact_psf.interpolate(waves, oversample_fac=oversample_fac)
+    im_exact = exact_psf.drawImage(bandpass, scale=0.2, nx=32, ny=32)
+    im_interp = interp_psf.drawImage(bandpass, scale=0.2, nx=32, ny=32)
+    np.testing.assert_array_almost_equal(
+        im_interp.array, im_exact.array, decimal=3,
+        err_msg='Interpolated ChromaticObject results differ for exact vs. interpolated')
 
     # Check that we can render an image with chromatic transformations directly, and with
     # interpolation.  Use a ChromaticAtmosphere just because that's easily transformed.
@@ -1532,7 +1607,6 @@ def test_interpolated_ChromaticObject():
 def test_ChromaticOpticalPSF():
     """Test the ChromaticOpticalPSF functionality."""
     import time
-    t1 = time.time()
 
     # For ChromaticOpticalPSF, exact evaluation is too slow for routine unit tests.  So, for
     # this unit test, we use an interpolated version only.  The tests of
@@ -1541,8 +1615,8 @@ def test_ChromaticOpticalPSF():
 
     # First, compare the interpolated result with saved, exact results.
     # Note that if the saved results file cannot be found, then this function will (slowly)
-    # generate the exact image.  Note that this may need to be done outside of nosetests to avoid
-    # the default nose time limit.
+    # generate the exact image.  Note that this may need to be done outside of pytest to avoid
+    # the default pytest time limit.
 
     # Note that exact results will have to be regenerated if any of the bandpasses or other
     # parameters defined here are changed.  Because of the parameters chosen here, there is a lot of
@@ -1609,12 +1683,12 @@ def test_ChromaticOpticalPSF():
     t7 = time.time()
     print("Time to draw InterpolatedChromaticObject: {0}s".format(t7-t6))
     printval(im_r, im_r_ref)
-    np.testing.assert_almost_equal(
-        im_r.array.sum()/im_r_ref.array.sum(), 1.0, decimal=3,
-        err_msg='Interpolated ChromaticOpticalPSF total flux disagrees with reference in r band')
-    np.testing.assert_almost_equal(
-        im_r.array.max()/im_r_ref.array.max(), 1.0, decimal=3,
-        err_msg='Interpolated ChromaticOpticalPSF peak flux disagrees with reference in r band')
+    # Check that arrays agree to within 1e-4 of integrated flux
+    np.testing.assert_allclose(im_r.array, im_r_ref.array, atol=1e-4*im_r_ref.array.sum())
+    # Check sums to 1e-3 of sum
+    np.testing.assert_allclose(im_r.array.sum(), im_r_ref.array.sum(), atol=1e-3*im_r.array.sum())
+    # Check peak to 1e-3 of peak
+    np.testing.assert_allclose(im_r.array.max(), im_r_ref.array.max(), atol=1e-3*im_r.array.max())
 
     im_r_ref /= im_r_ref.array.max()
     im_r /= im_r.array.max()
@@ -1757,17 +1831,16 @@ def test_chromatic_image_setup():
     # tested in other scripts above anyway, so just focus on possibilities related to known previous
     # failures here; specifically, drawing a convolution of two inseparable profiles while
     # specifying `nx`, `ny`, and `scale` as keywords.
-    img = galsim.Convolve(gal1+gal2, psf).drawImage(bandpass)
-    img2 = galsim.Convolve(gal1+gal2, psf).drawImage(bandpass, nx=32, ny=32, scale=0.2)
+    img = galsim.Convolve(gal1+gal2, psf).drawImage(bandpass, nx=32, ny=32, scale=0.2)
     bds = galsim.BoundsI(1, 32, 1, 32)
-    img3 = galsim.Convolve(gal1+gal2, psf).drawImage(bandpass, bounds=bds, scale=0.2)
-    np.testing.assert_array_equal(img2.array.shape, (32, 32),
+    img2 = galsim.Convolve(gal1+gal2, psf).drawImage(bandpass, bounds=bds, scale=0.2)
+    np.testing.assert_array_equal(img.array.shape, (32, 32),
                                   "Got wrong size output image using nx=, ny= keywords.")
-    np.testing.assert_array_equal(img3.array.shape, (32, 32),
+    np.testing.assert_array_equal(img2.array.shape, (32, 32),
                                   "Got wrong size output image using bounds= keyword.")
-    np.testing.assert_almost_equal(img2.scale, 0.2, 9,
+    np.testing.assert_almost_equal(img.scale, 0.2, 9,
                                    "Got wrong output image scale using nx=, ny= keywords.")
-    np.testing.assert_almost_equal(img3.scale, 0.2, 9,
+    np.testing.assert_almost_equal(img2.scale, 0.2, 9,
                                    "Got wrong output image scale using bounds= keyword.")
 
 
@@ -1812,6 +1885,10 @@ def test_chromatic_invariant():
     chrom1 = galsim.ChromaticObject(gsobj) * bulge_SED
     chrom2 = gsobj * bulge_SED
     chrom3 = galsim.ChromaticObject(gsobj * bulge_SED)
+    do_pickle(chrom1)
+    do_pickle(chrom2)
+    do_pickle(chrom3)
+    do_pickle(galsim.ChromaticObject(gsobj))
 
     check_chromatic_invariant(chrom1)
     check_chromatic_invariant(chrom2)
@@ -1887,6 +1964,7 @@ def test_chromatic_invariant():
     check_chromatic_invariant(deconv)
     #do_pickle(deconv)
     repr(deconv) # gratuitous coverage of repr until do_pickle works.
+    str(deconv)
 
     # ChromaticAutoConvolution
     autoconv1 = galsim.AutoConvolve(chrom_airy)
@@ -1909,6 +1987,7 @@ def test_chromatic_invariant():
     check_chromatic_invariant(four2)
     #do_pickle(four1)
     repr(four1) # gratuitous coverage of repr until do_pickle works.
+    str(four1)
 
     # And a few transforms too...
     # ChromaticTransformation
@@ -1960,7 +2039,6 @@ def test_ne():
     # ChromaticObject.  Only param is the GSObject to chromaticize.
     # The following should test unequal:
     gals = [cgal1, cgal2]
-
     all_obj_diff(gals)
 
     # # Check that setifying doesn't remove any duplicate items.
@@ -1985,8 +2063,8 @@ def test_ne():
     # and H2O_pressure.
 
     # Some params to test the celestial coords inputs.
-    ra = galsim.HMS_Angle("14:03:13") # hours : minutes : seconds
-    dec = galsim.DMS_Angle("54:20:57") # degrees : minutes : seconds
+    ra = galsim.Angle.from_hms("14:03:13") # hours : minutes : seconds
+    dec = galsim.Angle.from_dms("54:20:57") # degrees : minutes : seconds
     m101 = galsim.CelestialCoord(ra, dec)
     latitude = 19.8207 * galsim.degrees # latitude of Mauna Kea
     HA = -1.0 * galsim.hours # Hour angle = one hour before transit
@@ -2095,6 +2173,22 @@ def test_ne():
             galsim.ChromaticAiry(lam=1.0, lam_over_diam=1.0, obscuration=0.5),
             galsim.ChromaticAiry(lam=1.0, lam_over_diam=1.0, flux=1.1),
             galsim.ChromaticAiry(lam=1.0, lam_over_diam=1.0, gsparams=gsp)]
+    all_obj_diff(gals)
+
+    # Check that all the various combinations are properly unequal
+    gals = [cgal1, 
+            galsim.ChromaticObject(gal1),
+            galsim.InterpolatedChromaticObject(cgal1, np.arange(500, 700, 50)),
+            galsim.ChromaticAtmosphere(gal1, 500.0, zenith_angle=30*galsim.degrees),
+            gal1 * sed1,
+            galsim.ChromaticTransformation(cgal1),
+            galsim.ChromaticSum(cgal1),
+            galsim.ChromaticConvolution(cgal1),
+            galsim.ChromaticDeconvolution(cgal1),
+            galsim.ChromaticAutoConvolution(cgal1),
+            galsim.ChromaticAutoCorrelation(cgal1),
+            galsim.ChromaticOpticalPSF(lam=1.0, lam_over_diam=1.0),
+            galsim.ChromaticAiry(lam=1.0, lam_over_diam=1.0)]
     all_obj_diff(gals)
 
 
