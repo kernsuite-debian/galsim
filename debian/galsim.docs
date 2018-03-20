@@ -1,10 +1,4 @@
 examples/*
-xamples/output_yaml/*
-examples/great3/*
-examples/input/*
-examples/des/*
-examples/data/*
-examples/json/*
 CHANGELOG.md
 HISTORY.md
 INSTALL.md
