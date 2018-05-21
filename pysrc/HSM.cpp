@@ -1,5 +1,5 @@
 /* -*- c++ -*-
- * Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+ * Copyright (c) 2012-2018 by the GalSim developers team on GitHub
  * https://github.com/GalSim-developers
  *
  * This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -204,13 +204,13 @@ struct PyShapeData {
     template <typename U, typename V>
     static void wrapTemplates() {
         typedef CppShapeData (*FAM_func)(const BaseImage<U>&, const BaseImage<int>&,
-                                         double, double, Position<double>,
+                                         double, double, Position<double>, bool, 
                                          boost::shared_ptr<HSMParams>);
         bp::def("_FindAdaptiveMomView",
                 FAM_func(&FindAdaptiveMomView),
                 (bp::arg("object_image"), bp::arg("object_mask_image"), bp::arg("guess_sig")=5.0,
                  bp::arg("precision")=1.0e-6, bp::arg("guess_centroid")=Position<double>(0.,0.),
-                 bp::arg("hsmparams")=bp::object()),
+                 bp::arg("round_moments")=false, bp::arg("hsmparams")=bp::object()),
                 "Find adaptive moments of an image (with some optional args).");
 
         typedef CppShapeData (*ESH_func)(const BaseImage<U>&, const BaseImage<V>&,

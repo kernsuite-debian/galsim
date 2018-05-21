@@ -1,7 +1,7 @@
 from __future__ import print_function
 # vim: set filetype=python et ts=4 sw=4:
 
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -1296,6 +1296,16 @@ PyMODINIT_FUNC initcheck_python(void)
 }
 """
     config.Message('Checking if we can build against Python... ')
+
+    # Check if we need to add any additional linking flags according to what is given in
+    # sysconfig.get_config_var("LDSHARED").  cf. Issue #924
+    sys_builder = distutils.sysconfig.get_config_var("LDSHARED")
+    ldflags = sys_builder.split()
+    ldflags = ldflags[1:]  # strip off initial gcc or cc
+    config.env.Replace(LDMODULEFLAGS=['$LINKFLAGS'] + ldflags)
+    # Need this too to get consistency, e.g. with --arch options.
+    ccflags = distutils.sysconfig.get_config_var("CCSHARED")
+    config.env.Append(CCFLAGS=ccflags.split())
 
     # First check the python include directory -- see if we can compile the module.
     source_file2 = "import distutils.sysconfig; print(distutils.sysconfig.get_python_inc())"
