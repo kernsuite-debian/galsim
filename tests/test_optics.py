@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -92,6 +92,7 @@ def test_OpticalPSF_flux():
     do_pickle(optics_test)
     do_pickle(optics_test._psf)
     do_pickle(optics_test._psf, lambda x: x.drawImage(nx=20, ny=20, scale=1.7, method='no_pixel'))
+    assert optics_test._screens.r0_500_effective is None
 
 
 @timer
@@ -228,11 +229,8 @@ def test_OpticalPSF_aberrations_struts():
     optics = galsim.OpticalPSF(
         lod, obscuration=obscuration, nstruts=5, strut_thick=0.04, strut_angle=8.*galsim.degrees,
         astig2=0.04, coma1=-0.07, defocus=0.09, oversampling=1)
-    try:
-        np.testing.assert_raises(TypeError, galsim.OpticalPSF, lod, nstruts=5, strut_thick=0.01,
-                                 strut_angle=8.) # wrong units
-    except ImportError:
-        print('The assert_raises tests require nose')
+    with assert_raises(TypeError):
+        galsim.OpticalPSF(lod, nstruts=5, strut_thick=0.01, strut_angle=8.) # wrong units
     do_pickle(optics, lambda x: x.drawImage(nx=20, ny=20, scale=1.7, method='no_pixel'))
     do_pickle(optics)
 
@@ -291,19 +289,18 @@ def test_OpticalPSF_aberrations_kwargs():
     do_pickle(opt2)
 
     # Also, check for proper response to weird inputs.
-    try:
-        # aberrations must be a list or an array
-        np.testing.assert_raises(TypeError,galsim.OpticalPSF,lod,aberrations=0.3)
-        # It must have at least 3 elements
-        np.testing.assert_raises(ValueError,galsim.OpticalPSF,lod,aberrations=[0.0]*2)
-        if 'assert_warns' in np.testing.__dict__:
-            # The first element must be 0. (Just a warning!)
-            np.testing.assert_warns(UserWarning,galsim.OpticalPSF,lod,aberrations=[0.3]*8)
-        # Cannot provide both aberrations and specific ones by name.
-        np.testing.assert_raises(TypeError,galsim.OpticalPSF,lod,aberrations=np.zeros(8),
-                                 defocus=-0.12)
-    except ImportError:
-        print('The assert_raises tests require nose')
+    # aberrations must be a list or an array
+    with assert_raises(TypeError):
+        galsim.OpticalPSF(lod, aberrations=0.3)
+    # It must have at least 3 elements
+    with assert_raises(ValueError):
+        galsim.OpticalPSF(lod, aberrations=[0.0]*2)
+    # The first element must be 0. (Just a warning!)
+    with assert_warns(UserWarning):
+        galsim.OpticalPSF(lod, aberrations=[0.3]*8)
+    # Cannot provide both aberrations and specific ones by name.
+    with assert_raises(TypeError):
+        galsim.OpticalPSF(lod, aberrations=np.zeros(8), defocus=-0.12)
 
 
 @timer
@@ -678,13 +675,10 @@ def test_OpticalPSF_lamdiam():
         err_msg="Inconsistent OpticalPSF when using different initialization arguments.")
 
     # Now make sure we cannot do some weird mix-and-match of arguments.
-    try:
-        np.testing.assert_raises(TypeError, galsim.OpticalPSF, lam=1.) # need diam too!
-        np.testing.assert_raises(TypeError, galsim.OpticalPSF, diam=1.) # need lam too!
-        np.testing.assert_raises(TypeError, galsim.OpticalPSF, lam_over_diam=1., diam=1.)
-        np.testing.assert_raises(TypeError, galsim.OpticalPSF, lam_over_diam=1., lam=1.)
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(TypeError, galsim.OpticalPSF, lam=1.) # need diam too!
+    assert_raises(TypeError, galsim.OpticalPSF, diam=1.) # need lam too!
+    assert_raises(TypeError, galsim.OpticalPSF, lam_over_diam=1., diam=1.)
+    assert_raises(TypeError, galsim.OpticalPSF, lam_over_diam=1., lam=1.)
 
 
 @timer
@@ -698,102 +692,6 @@ def test_OpticalPSF_pupil_plane_size():
     # galsim.optics.OpticalPSF(aberrations=[0,0,0,0,0.5], diam=4.0, lam=700.0, pupil_plane_im=im)
     # But using the new framework, should work.
     galsim.OpticalPSF(aberrations=[0,0,0,0,0.5], diam=4.0, lam=700.0, pupil_plane_im=im)
-
-
-@timer
-def test_Zernike_orthonormality():
-    """ Zernike optical screens *should* be normalized such that
-    \int_{unit disc} Z(n1, m1) Z(n2, m2) dA = \pi in unit disc coordinates, or alternatively
-    = aperture area if radial coordinate is not normalized (i.e., diam != 2).
-    """
-    jmax = 20  # Going up to 20 filled Zernikes takes about ~1 sec on my laptop
-    diam = 4.0
-    pad_factor = 3.0  # Increasing pad_factor eliminates test failures caused by pixelization.
-    aper = galsim.Aperture(diam=diam, pad_factor=pad_factor)
-    u = aper.u[aper.illuminated]
-    v = aper.v[aper.illuminated]
-    area = np.pi*(diam/2)**2
-    for j1 in range(1, jmax+1):
-        screen1 = galsim.OpticalScreen(diam=diam, aberrations=[0]*(j1+1)+[1])
-        wf1 = screen1.wavefront(u, v) / 500.0  # nm -> waves
-        for j2 in range(j1, jmax+1):
-            screen2 = galsim.OpticalScreen(diam=diam, aberrations=[0]*(j2+1)+[1])
-            wf2 = screen2.wavefront(u, v) / 500.0
-            integral = np.dot(wf1, wf2) * aper.pupil_plane_scale**2
-            if j1 == j2:
-                # Only passes at ~1% level because of pixelization.
-                np.testing.assert_allclose(
-                        integral, area, rtol=1e-2,
-                        err_msg="Orthonormality failed for (j1,j2) = ({0},{1})".format(j1, j2))
-            else:
-                # Only passes at ~1% level because of pixelization.
-                np.testing.assert_allclose(
-                        integral, 0.0, atol=area*1e-2,
-                        err_msg="Orthonormality failed for (j1,j2) = ({0},{1})".format(j1, j2))
-
-    do_pickle(screen1)
-    do_pickle(screen1, lambda x: tuple(x.wavefront(u, v)))
-
-    # Repeat for Annular Zernikes
-    jmax = 14  # Going up to 14 annular Zernikes takes about ~1 sec on my laptop
-    obscuration = 0.3
-    aper = galsim.Aperture(diam=diam, pad_factor=pad_factor, obscuration=obscuration)
-    u = aper.u[aper.illuminated]
-    v = aper.v[aper.illuminated]
-    area = np.pi*(diam/2)**2*(1 - obscuration**2)
-    for j1 in range(1, jmax+1):
-        screen1 = galsim.OpticalScreen(diam=diam, aberrations=[0]*(j1+1)+[1],
-                                       obscuration=obscuration, annular_zernike=True)
-        wf1 = screen1.wavefront(u, v) / 500.0  # nm -> waves
-        for j2 in range(j1, jmax+1):
-            screen2 = galsim.OpticalScreen(diam=diam, aberrations=[0]*(j2+1)+[1],
-                                           obscuration=obscuration, annular_zernike=True)
-            wf2 = screen2.wavefront(u, v) / 500.0
-            integral = np.dot(wf1, wf2) * aper.pupil_plane_scale**2
-            if j1 == j2:
-                # Only passes at ~1% level because of pixelization.
-                np.testing.assert_allclose(
-                        integral, area, rtol=1e-2,
-                        err_msg="Orthonormality failed for (j1,j2) = ({0},{1})".format(j1, j2))
-            else:
-                # Only passes at ~1% level because of pixelization.
-                np.testing.assert_allclose(
-                        integral, 0.0, atol=area*1e-2,
-                        err_msg="Orthonormality failed for (j1,j2) = ({0},{1})".format(j1, j2))
-    do_pickle(screen1)
-    do_pickle(screen1, lambda x: tuple(x.wavefront(u, v)))
-
-
-@timer
-def test_annular_Zernike_limit():
-    """Check that annular Zernike matches circular Zernike in the limit of 0.0 obscuration.
-    """
-    jmax = 20
-    bd = galsim.BaseDeviate(1029384756)
-    u = galsim.UniformDeviate(bd)
-
-    diam = 4.0
-
-    for i in range(4):  # Do a few random tests.  Takes about 1 sec.
-        aberrations = [0]+[u() for i in range(jmax)]
-        psf1 = galsim.OpticalPSF(diam=diam, lam=500, obscuration=1e-5,
-                                 aberrations=aberrations, annular_zernike=True)
-        psf2 = galsim.OpticalPSF(diam=diam, lam=500, obscuration=1e-5,
-                                 aberrations=aberrations)
-        im1 = psf1.drawImage()
-        im2 = psf2.drawImage(image=im1.copy())
-        # We want the images to be close, since the obscuration is near 0, but not identical.
-        # That way we know that the `annular_zernike` keyword is doing something.
-        assert im1 != im2, "annular Zernike identical to circular Zernike"
-        np.testing.assert_allclose(
-                im1.array, im2.array, atol=1e-10,
-                err_msg="annular Zernike with 1e-5 obscuration not close to circular Zernike")
-
-    do_pickle(psf1._aper)
-    do_pickle(psf1)
-    do_pickle(psf1, lambda x: x.drawImage())
-    do_pickle(psf2)
-    do_pickle(psf2, lambda x: x.drawImage())
 
 
 @timer
@@ -902,53 +800,6 @@ def test_ne():
                                    pupil_angle=10*galsim.degrees, suppress_warning=True)]
     all_obj_diff(objs)
 
-@timer
-def test_noll():
-
-    # This function stolen from https://github.com/tvwerkhoven/libtim-py/blob/master/libtim/zern.py
-    # It used to be in phase_screen.py, but now we use a faster lookup-table implementation.
-    # This reference version is still useful as a test.
-    def noll_to_zern(j):
-        if (j == 0):
-            raise ValueError("Noll indices start at 1. 0 is invalid.")
-        n = 0
-        j1 = j-1
-        while (j1 > n):
-            n += 1
-            j1 -= n
-        m = (-1)**j * ((n % 2) + 2 * int((j1+((n+1) % 2)) / 2.0))
-        return (n, m)
-
-    # Test that the version of _noll_to_zern in phase_screens.py is accurate.
-    for j in range(1,30):
-        true_n,true_m = noll_to_zern(j)
-        n,m = galsim.phase_screens._noll_to_zern(j)
-        #print('j=%d, noll = %d,%d, true_noll = %d,%d'%(j,n,m,true_n,true_m))
-        assert n == true_n
-        assert m == true_m
-        # These didn't turn out to be all that useful for fast conversions, but they're cute.
-        assert n == int(np.sqrt(8*j-7)-1)//2
-        mm = -m if (n//2)%2 == 0 else m
-        assert j == n*(n+1)/2 + (abs(2*mm+1)+1)//2
-
-    # Again, the reference version of this function used to be in phase_screens.py
-    def zern_rho_coefs(n, m):
-        """Compute coefficients of radial part of Zernike (n, m).
-        """
-        from galsim.phase_screens import _nCr
-        kmax = (n-abs(m)) // 2
-        A = np.zeros(n+1)
-        for k in range(kmax+1):
-            A[n-2*k] = (-1)**k * _nCr(n-k, k) * _nCr(n-2*k, kmax-k)
-        return A
-
-    for j in range(1,30):
-        n,m = galsim.phase_screens._noll_to_zern(j)
-        true_coefs = zern_rho_coefs(n,m)
-        coefs = galsim.phase_screens._zern_rho_coefs(n,m)
-        #print('j=%d, coefs = %s'%(j,coefs))
-        np.testing.assert_array_equal(coefs,true_coefs)
-
 
 @timer
 def test_geometric_shoot():
@@ -981,9 +832,9 @@ def test_geometric_shoot():
         np.testing.assert_allclose(
             shoot_moments.moments_centroid.y, fft_moments.moments_centroid.y, rtol=0, atol=0.025,
             err_msg="")
-        # 1% size tolerance
+        # 2% size tolerance
         np.testing.assert_allclose(
-            shoot_moments.moments_sigma, fft_moments.moments_sigma, rtol=0.01, atol=0,
+            shoot_moments.moments_sigma, fft_moments.moments_sigma, rtol=0.02, atol=0,
             err_msg="")
         # Not amazing ellipticity consistency at the moment.  0.01 tolerance.
         print(fft_moments.observed_shape)
@@ -1006,10 +857,7 @@ if __name__ == "__main__":
     test_OpticalPSF_pupil_plane()
     test_OpticalPSF_lamdiam()
     test_OpticalPSF_pupil_plane_size()
-    test_Zernike_orthonormality()
-    test_annular_Zernike_limit()
     test_OpticalPSF_aper()
     test_stepk_maxk_iipad()
     test_ne()
-    test_noll()
     test_geometric_shoot()

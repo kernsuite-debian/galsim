@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -270,6 +270,8 @@ def SetDefaultIndex(config, num):
             index['min'] = 0
             index['max'] = num-1
             index['default'] = num
+    if 'index_key' in config:
+        config['index']['index_key'] = config['index_key']
 
 
 def CheckAllParams(config, req={}, opt={}, single=[], ignore=[]):
@@ -693,7 +695,7 @@ def _GenerateFromCurrent(config, base, value_type):
     try:
         return EvaluateCurrentValue(k, d, base, value_type)
     except ValueError as e: # pragma: no cover
-        raise ValueError("%s\nError generating Current value with key = %s"%(e,key))
+        raise ValueError("%s\nError generating Current value with key = %s"%(e,k))
 
 
 def RegisterValueType(type_name, gen_func, valid_types, input_type=None):

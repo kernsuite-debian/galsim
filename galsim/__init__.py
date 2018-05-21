@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -53,7 +53,7 @@ Use the galsim tag to flag it as a question about GalSim.
 
 
 
-Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 https://github.com/GalSim-developers
 
 Redistribution and use in source and binary forms, with or without
@@ -103,7 +103,7 @@ from .table import LookupTable, LookupTable2D
 from .image import Image, ImageS, ImageI, ImageF, ImageD, ImageCF, ImageCD, ImageUS, ImageUI, _Image
 
 # PhotonArray
-from .photon_array import PhotonArray, WavelengthSampler, FRatioAngles
+from .photon_array import PhotonArray, WavelengthSampler, FRatioAngles, PhotonDCR
 
 # Noise
 from .random import BaseDeviate, UniformDeviate, GaussianDeviate, PoissonDeviate, DistDeviate
@@ -131,6 +131,8 @@ from .compound import AutoConvolve, AutoConvolution, AutoCorrelate, AutoCorrelat
 from .compound import FourierSqrt, FourierSqrtProfile
 from .compound import RandomWalk
 from .transform import Transform, Transformation, _Transform
+from .vonkarman import VonKarman
+from .second_kick import SecondKick
 
 # Chromatic
 from .chromatic import ChromaticObject, ChromaticAtmosphere, ChromaticSum
@@ -172,3 +174,4 @@ from . import cdmodel
 from . import optics
 from . import utilities
 from . import fft
+from . import zernike

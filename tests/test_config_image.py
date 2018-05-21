@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -223,10 +223,8 @@ def test_phot():
     # So without the noise field, it will raise an exception.
     del config['image']['n_photons']
     del config['stamp']['n_photons']
-    try:
-        np.testing.assert_raises(AttributeError, galsim.config.BuildImage, config)
-    except ImportError:
-        pass
+    with assert_raises(AttributeError):
+        galsim.config.BuildImage(config)
 
     # Using this much extra noise with a sky noise variance of 50 cuts the number of photons
     # approximately in half.
@@ -380,11 +378,8 @@ def test_reject():
     # If we lower the number of retries, we'll max out and abort the image
     config['stamp']['retry_failures'] = 10
     galsim.config.RemoveCurrent(config)
-    try:
-        np.testing.assert_raises((ValueError,IndexError,RuntimeError),
-                                 galsim.config.BuildStamps, nimages, config, do_noise=False)
-    except ImportError:
-        pass
+    with assert_raises((ValueError, IndexError, RuntimeError)):
+        galsim.config.BuildStamps(nimages, config, do_noise=False)
     try:
         with CaptureLog() as cl:
             galsim.config.BuildStamps(nimages, config, do_noise=False, logger=cl.logger)
@@ -427,7 +422,7 @@ def test_reject():
     config['stamp']['max_snr'] = 20 # If nothing else failed, min or max snr will reject.
     config['root'] = 'test_reject'  # This lets the code generate a file name automatically.
     del config['stamp']['size']     # Otherwise skipped images will still build an empty image.
-    galsim.config.RemoveCurrent(config)
+    config = galsim.config.CleanConfig(config)
     with CaptureLog() as cl:
         galsim.config.BuildFiles(nimages, config, logger=cl.logger)
     #print(cl.output)
@@ -645,15 +640,12 @@ def test_ring():
     gal4b = disk + bulge
     gsobject_compare(gal4a, gal4b, conv=galsim.Gaussian(sigma=1))
 
-    try:
-        # Make sure they don't match when using the default GSParams
-        disk = galsim.Exponential(half_light_radius=2).shear(e2=0.3)
-        bulge = galsim.Sersic(n=3,half_light_radius=1.3).shear(e1=0.12,e2=-0.08)
-        gal4c = disk + bulge
-        np.testing.assert_raises(AssertionError,gsobject_compare, gal4a, gal4c,
-                                 conv=galsim.Gaussian(sigma=1))
-    except ImportError:
-        print('The assert_raises tests require nose')
+    # Make sure they don't match when using the default GSParams
+    disk = galsim.Exponential(half_light_radius=2).shear(e2=0.3)
+    bulge = galsim.Sersic(n=3,half_light_radius=1.3).shear(e1=0.12,e2=-0.08)
+    gal4c = disk + bulge
+    with assert_raises(AssertionError):
+        gsobject_compare(gal4a, gal4c, conv=galsim.Gaussian(sigma=1))
 
 
 @timer
@@ -758,15 +750,14 @@ def test_scattered():
 
     np.testing.assert_almost_equal(image.array, image2.array)
 
-    try:
-        # Check error message for missing nobjects
-        del config['image']['nobjects']
-        np.testing.assert_raises(AttributeError, galsim.config.BuildImage,config)
-        # Also if there is an input field that doesn't have nobj capability
-        config['input'] = { 'dict' : { 'dir' : 'config_input', 'file_name' : 'dict.p' } }
-        np.testing.assert_raises(AttributeError, galsim.config.BuildImage,config)
-    except ImportError:
-        pass
+    # Check error message for missing nobjects
+    del config['image']['nobjects']
+    with assert_raises(AttributeError):
+        galsim.config.BuildImage(config)
+    # Also if there is an input field that doesn't have nobj capability
+    config['input'] = { 'dict' : { 'dir' : 'config_input', 'file_name' : 'dict.p' } }
+    with assert_raises(AttributeError):
+        galsim.config.BuildImage(config)
     # However, an input field that does have nobj will return something for nobjects.
     # This catalog has 3 rows, so equivalent to nobjects = 3
     config['input'] = { 'catalog' : { 'dir' : 'config_input', 'file_name' : 'catalog.txt' } }
@@ -1307,11 +1298,8 @@ def test_wcs():
     wcs = galsim.config.BuildWCS(config, 'wcs', config)
     assert wcs == galsim.PixelScale(1.0)
 
-    try:
-        np.testing.assert_raises(ValueError,
-                                 galsim.config.BuildWCS, config['image'], 'invalid', config)
-    except ImportError:
-        pass
+    with assert_raises(ValueError):
+        galsim.config.BuildWCS(config['image'], 'invalid', config)
 
 @timer
 def test_index_key():
@@ -1329,7 +1317,10 @@ def test_index_key():
 
     # Normal sequential
     config1 = galsim.config.CopyConfig(config)
-    galsim.config.BuildFiles(nfiles, config1)
+    # Note: Using BuildFiles(config1) would normally work, but it has an extra copy internally,
+    # which messes up some of the current checks later.
+    for n in range(nfiles):
+        galsim.config.BuildFile(config1, file_num=n, image_num=n*nimages, obj_num=n*n_per_file)
     images1 = [ galsim.fits.readMulti('output/index_key%02d.fits'%n) for n in range(nfiles) ]
 
     if __name__ == '__main__':
@@ -1340,27 +1331,31 @@ def test_index_key():
         # Multiprocessing files
         config2 = galsim.config.CopyConfig(config)
         config2['output']['nproc'] = nfiles
-        galsim.config.BuildFiles(nfiles, config2)
+        for n in range(nfiles):
+            galsim.config.BuildFile(config2, file_num=n, image_num=n*nimages, obj_num=n*n_per_file)
         images2 = [ galsim.fits.readMulti('output/index_key%02d.fits'%n) for n in range(nfiles) ]
 
         # Multiprocessing images
         config3 = galsim.config.CopyConfig(config)
         config3['image']['nproc'] = nfiles
-        galsim.config.BuildFiles(nfiles, config3)
+        for n in range(nfiles):
+            galsim.config.BuildFile(config3, file_num=n, image_num=n*nimages, obj_num=n*n_per_file)
         images3 = [ galsim.fits.readMulti('output/index_key%02d.fits'%n) for n in range(nfiles) ]
 
         # New config for each file
         config4 = [ galsim.config.CopyConfig(config) for n in range(nfiles) ]
         for n in range(nfiles):
             galsim.config.SetupConfigFileNum(config4[n], n, n*nimages, n*n_per_file)
+            galsim.config.SetupConfigRNG(config4[n])
         images4 = [ galsim.config.BuildImages(nimages, config4[n],
-                                             image_num=n*nimages, obj_num=n*n_per_file)
+                                              image_num=n*nimages, obj_num=n*n_per_file)
                     for n in range(nfiles) ]
 
     # New config for each image
     config5 = [ galsim.config.CopyConfig(config) for n in range(nfiles) ]
     for n in range(nfiles):
         galsim.config.SetupConfigFileNum(config5[n], n, n*nimages, n*n_per_file)
+        galsim.config.SetupConfigRNG(config5[n])
 
     images5 = [ [ galsim.config.BuildImage(galsim.config.CopyConfig(config5[n]),
                                            image_num=n*nimages+i,
