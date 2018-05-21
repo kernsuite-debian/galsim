@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -249,7 +249,7 @@ def test_dep_base():
     assert check_dep(test_gal.getNegativeFlux) == test_gal.negative_flux
     assert check_dep(test_gal.maxSB) == test_gal.max_sb
     assert check_dep(test_gal.centroid) == test_gal.centroid
- 
+
     test_gal = galsim.Exponential(flux=1.7, scale_radius = test_scale[0])
     test_gal_copy = check_dep(test_gal.copy)
     assert check_dep(test_gal.getFlux) == test_gal.flux
@@ -691,15 +691,12 @@ def test_dep_gsobject_ring():
     gal4b = disk + bulge
     gsobject_compare(gal4a, gal4b, conv=galsim.Gaussian(sigma=1))
 
-    try:
-        # Make sure they don't match when using the default GSParams
-        disk = galsim.Exponential(half_light_radius=2).shear(e2=0.3)
-        bulge = galsim.Sersic(n=3,half_light_radius=1.3).shear(e1=0.12,e2=-0.08)
-        gal4c = disk + bulge
-        np.testing.assert_raises(AssertionError,gsobject_compare, gal4a, gal4c,
-                                 conv=galsim.Gaussian(sigma=1))
-    except ImportError:
-        print('The assert_raises tests require nose')
+    # Make sure they don't match when using the default GSParams
+    disk = galsim.Exponential(half_light_radius=2).shear(e2=0.3)
+    bulge = galsim.Sersic(n=3,half_light_radius=1.3).shear(e1=0.12,e2=-0.08)
+    gal4c = disk + bulge
+    with assert_raises(AssertionError):
+        gsobject_compare(gal4a, gal4c, conv=galsim.Gaussian(sigma=1))
 
 
 @timer
@@ -1435,7 +1432,9 @@ def test_dep_phase_psf():
             "Individually generated AtmosphericPSF differs from AtmosphericPSF generated in batch")
 
     optical_screen = galsim.OpticalScreen(diam=1.0)
-    assert check_dep(getattr, optical_screen, 'coef_array') == optical_screen._coef_array
+    assert check_dep(getattr, optical_screen, 'coef_array') == optical_screen._zernike._coef_array
+    optical_screen = galsim.OpticalScreen(diam=2.0)
+    assert check_dep(getattr, optical_screen, 'coef_array') == optical_screen._zernike._coef_array
 
 @timer
 def test_dep_wmult():
@@ -2148,6 +2147,47 @@ def test_dep_table():
     np.testing.assert_array_equal(tab1.f, tab2.f)
     assert tab1 == tab2
 
+def test_dep_kaiser():
+    """Test that our Kaiser-Squires inversion routine correctly recovers the convergence map
+    for a field containing known Gaussian-profile halos.
+    """
+    def kappa_gaussian(theta1_array, theta2_array, sigma, pos, amp=1.):
+        sigma2 = sigma * sigma
+        theta2 = (theta1_array - pos.x)**2 + (theta2_array - pos.y)**2
+        return amp * np.exp(-.5 * theta2 / sigma2)
+
+    def shear_gaussian(theta1_array, theta2_array, sigma, pos, amp=1.):
+        sigma2 = sigma * sigma
+        t1 = theta1_array - pos.x
+        t2 = theta2_array - pos.y
+        theta2 = t1 * t1 + t2 * t2
+        gammat = 2. * amp * sigma2 * (
+            1. - (1. + .5 * theta2 / sigma2) * np.exp(-.5 * theta2 / sigma2)) / theta2
+        g1 = -gammat * (t1**2 - t2**2) / theta2
+        g2 = -gammat * 2. * t1 * t2 / theta2
+        return g1, g2
+
+    # This is just the start of the test_kappa_gauss function in test_lensing.py
+    grid_spacing_arcsec = 1
+    grid_extent_arcsec = 100.
+    ngrid = int(grid_extent_arcsec / grid_spacing_arcsec)
+    grid_side = (np.arange(ngrid, dtype=float) + .5) * grid_spacing_arcsec - .5 * grid_extent_arcsec
+    x, y = np.meshgrid(grid_side, grid_side)
+    k_big = kappa_gaussian(x, y, sigma=5., pos=galsim.PositionD(-6., -6.), amp=.5)
+    k_sml = kappa_gaussian(x, y, sigma=4., pos=galsim.PositionD(6., 6.), amp=.2)
+    g1_big, g2_big = shear_gaussian(x, y, sigma=5., pos=galsim.PositionD(-6., -6.), amp=.5)
+    g1_sml, g2_sml = shear_gaussian(x, y, sigma=4., pos=galsim.PositionD(6., 6.), amp=.2)
+    g1 = galsim.Image(g1_big + g1_sml)
+    g2 = galsim.Image(g2_big + g2_sml)
+    k_ref = k_big + k_sml
+    k_testE, k_testB = check_dep(galsim.lensing_ps.kappaKaiserSquires,g1, g2)
+    icent = np.arange(ngrid // 2) + ngrid // 4
+    np.testing.assert_array_almost_equal(
+        k_testE[np.ix_(icent, icent)], k_ref[np.ix_(icent, icent)], decimal=2,
+        err_msg="Reconstructed kappa does not match input to 2 decimal places.")
+    np.testing.assert_array_almost_equal(
+        k_testB[np.ix_(icent, icent)], np.zeros((ngrid // 2, ngrid // 2)), decimal=3,
+        err_msg="Reconstructed B-mode kappa is non-zero at greater than 3 decimal places.")
 
 if __name__ == "__main__":
     test_dep_bandpass()
@@ -2175,3 +2215,4 @@ if __name__ == "__main__":
     test_dep_interp()
     test_dep_photon_array()
     test_dep_table()
+    test_dep_kaiser()
