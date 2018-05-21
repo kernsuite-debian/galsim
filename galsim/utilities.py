@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -21,6 +21,7 @@ Module containing general utilities for the GalSim software.
 from contextlib import contextmanager
 from future.utils import iteritems
 from builtins import range, object
+import weakref
 
 import numpy as np
 import galsim
@@ -234,12 +235,9 @@ def rand_arr(shape, deviate):
     @returns a NumPy array of the desired dimensions with random numbers generated using the
     supplied deviate.
     """
-    if len(shape) is not 2:
-        raise ValueError("Can only make a 2d array from this function!")
-    # note reversed indices due to NumPy vs. Image array indexing conventions!
-    tmp_img = galsim.ImageD(shape[1], shape[0])
-    tmp_img.addNoise(galsim.DeviateNoise(deviate))
-    return tmp_img.array
+    tmp = np.empty(tuple(shape), dtype=float)
+    deviate.generate(tmp.ravel())
+    return tmp
 
 def convert_interpolant(interpolant):
     """Convert a given interpolant to an Interpolant if it is given as a string.
@@ -1139,14 +1137,17 @@ def combine_wave_list(*args):
     red_limit = np.inf
     wave_list = np.array([], dtype=float)
     for obj in args:
-        if hasattr(obj, 'blue_limit') and obj.blue_limit is not None:
+        if hasattr(obj, 'blue_limit'):
             blue_limit = max(blue_limit, obj.blue_limit)
-        if hasattr(obj, 'red_limit') and obj.red_limit is not None:
+        if hasattr(obj, 'red_limit'):
             red_limit = min(red_limit, obj.red_limit)
         wave_list = np.union1d(wave_list, obj.wave_list)
     wave_list = wave_list[(wave_list >= blue_limit) & (wave_list <= red_limit)]
     if blue_limit > red_limit:
         raise RuntimeError("Empty wave_list intersection.")
+    # Make sure both limits are included.
+    if len(wave_list) > 0 and (wave_list[0] != blue_limit or wave_list[-1] != red_limit):
+        wave_list = np.union1d([blue_limit, red_limit], wave_list)
     return wave_list, blue_limit, red_limit
 
 def functionize(f):
@@ -1419,3 +1420,30 @@ class lazy_property(object):
         value = self.fget(obj)
         setattr(obj, self.func_name, value)
         return value
+
+
+# Assign an arbitrary ordering to weakref.ref so that it can be part of a heap.
+class OrderedWeakRef(weakref.ref):
+    def __lt__(self, other):
+        return id(self) < id(other)
+
+
+def nCr(n, r):
+    """Combinations.  I.e., the number of ways to choose `r` distiguishable things from `n`
+    distinguishable things.
+    """
+    from math import factorial
+    if 0 <= r <= n:
+        return factorial(n) // (factorial(r) * factorial(n-r))
+    else:
+        return 0
+
+# From http://code.activestate.com/recipes/81253-weakmethod/
+class WeakMethod(object):
+    def __init__(self, f):
+        self.f = f.__func__
+        self.c = weakref.ref(f.__self__)
+    def __call__(self, *args):
+        if self.c() is None :
+            raise TypeError('Method called on dead object')
+        return self.f(self.c(), *args)

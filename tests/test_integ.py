@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -193,12 +193,8 @@ def test_invroot_infinite_limits():
         test_integral, true_result, decimal=test_decimal, verbose=True,
         err_msg="x^(-2) integral failed across interval [1, inf].")
 
-    try:
-        np.testing.assert_raises(
-            RuntimeError,
-            galsim.integ.int1d, test_func, 0., 1., test_rel_err, test_abs_err)
-    except ImportError:
-        print('The assert_raises tests require nose')
+    with assert_raises(RuntimeError):
+        galsim.integ.int1d(test_func, 0., 1., test_rel_err, test_abs_err)
 
 
 @timer

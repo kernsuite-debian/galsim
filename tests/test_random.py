@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -258,12 +258,9 @@ def test_uniform():
     assert u1 != u2, "Consecutive UniformDeviate(None) compared equal!"
     # We shouldn't be able to construct a UniformDeviate from anything but a BaseDeviate, int, str,
     # or None.
-    try:
-        np.testing.assert_raises(RuntimeError, galsim.UniformDeviate, dict())
-        np.testing.assert_raises(RuntimeError, galsim.UniformDeviate, list())
-        np.testing.assert_raises(RuntimeError, galsim.UniformDeviate, set())
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(RuntimeError, galsim.UniformDeviate, dict())
+    assert_raises(RuntimeError, galsim.UniformDeviate, list())
+    assert_raises(RuntimeError, galsim.UniformDeviate, set())
 
 
 @timer
@@ -500,12 +497,9 @@ def test_gaussian():
     assert g1 != g2, "Consecutive GaussianDeviate(None) compared equal!"
     # We shouldn't be able to construct a GaussianDeviate from anything but a BaseDeviate, int, str,
     # or None.
-    try:
-        np.testing.assert_raises(RuntimeError, galsim.GaussianDeviate, dict())
-        np.testing.assert_raises(RuntimeError, galsim.GaussianDeviate, list())
-        np.testing.assert_raises(RuntimeError, galsim.GaussianDeviate, set())
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(RuntimeError, galsim.GaussianDeviate, dict())
+    assert_raises(RuntimeError, galsim.GaussianDeviate, list())
+    assert_raises(RuntimeError, galsim.GaussianDeviate, set())
 
 
 @timer
@@ -634,12 +628,9 @@ def test_binomial():
     assert b1 != b2, "Consecutive BinomialDeviate(None) compared equal!"
     # We shouldn't be able to construct a BinomialDeviate from anything but a BaseDeviate, int, str,
     # or None.
-    try:
-        np.testing.assert_raises(RuntimeError, galsim.BinomialDeviate, dict())
-        np.testing.assert_raises(RuntimeError, galsim.BinomialDeviate, list())
-        np.testing.assert_raises(RuntimeError, galsim.BinomialDeviate, set())
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(RuntimeError, galsim.BinomialDeviate, dict())
+    assert_raises(RuntimeError, galsim.BinomialDeviate, list())
+    assert_raises(RuntimeError, galsim.BinomialDeviate, set())
 
 
 @timer
@@ -873,12 +864,9 @@ def test_poisson():
     assert p1 != p2, "Consecutive PoissonDeviate(None) compared equal!"
     # We shouldn't be able to construct a PoissonDeviate from anything but a BaseDeviate, int, str,
     # or None.
-    try:
-        np.testing.assert_raises(RuntimeError, galsim.PoissonDeviate, dict())
-        np.testing.assert_raises(RuntimeError, galsim.PoissonDeviate, list())
-        np.testing.assert_raises(RuntimeError, galsim.PoissonDeviate, set())
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(RuntimeError, galsim.PoissonDeviate, dict())
+    assert_raises(RuntimeError, galsim.PoissonDeviate, list())
+    assert_raises(RuntimeError, galsim.PoissonDeviate, set())
 
 
 @timer
@@ -1114,12 +1102,9 @@ def test_weibull():
     assert w1 != w2, "Consecutive WeibullDeviate(None) compared equal!"
     # We shouldn't be able to construct a WeibullDeviate from anything but a BaseDeviate, int, str,
     # or None.
-    try:
-        np.testing.assert_raises(RuntimeError, galsim.WeibullDeviate, dict())
-        np.testing.assert_raises(RuntimeError, galsim.WeibullDeviate, list())
-        np.testing.assert_raises(RuntimeError, galsim.WeibullDeviate, set())
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(RuntimeError, galsim.WeibullDeviate, dict())
+    assert_raises(RuntimeError, galsim.WeibullDeviate, list())
+    assert_raises(RuntimeError, galsim.WeibullDeviate, set())
 
 
 @timer
@@ -1246,12 +1231,9 @@ def test_gamma():
     assert g1 != g2, "Consecutive GammaDeviate(None) compared equal!"
     # We shouldn't be able to construct a GammaDeviate from anything but a BaseDeviate, int, str,
     # or None.
-    try:
-        np.testing.assert_raises(RuntimeError, galsim.GammaDeviate, dict())
-        np.testing.assert_raises(RuntimeError, galsim.GammaDeviate, list())
-        np.testing.assert_raises(RuntimeError, galsim.GammaDeviate, set())
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(RuntimeError, galsim.GammaDeviate, dict())
+    assert_raises(RuntimeError, galsim.GammaDeviate, list())
+    assert_raises(RuntimeError, galsim.GammaDeviate, set())
 
 
 @timer
@@ -1378,40 +1360,34 @@ def test_chi2():
     assert c1 != c2, "Consecutive Chi2Deviate(None) compared equal!"
     # We shouldn't be able to construct a Chi2Deviate from anything but a BaseDeviate, int, str,
     # or None.
-    try:
-        np.testing.assert_raises(RuntimeError, galsim.Chi2Deviate, dict())
-        np.testing.assert_raises(RuntimeError, galsim.Chi2Deviate, list())
-        np.testing.assert_raises(RuntimeError, galsim.Chi2Deviate, set())
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(RuntimeError, galsim.Chi2Deviate, dict())
+    assert_raises(RuntimeError, galsim.Chi2Deviate, list())
+    assert_raises(RuntimeError, galsim.Chi2Deviate, set())
 
 
 @timer
 def test_distfunction():
     """Test distribution-defined random number generator with a function
     """
-    try:
-        # Make sure it requires an input function in order to work.
-        np.testing.assert_raises(TypeError, galsim.DistDeviate)
-        # Make sure it does appropriate input sanity checks.
-        np.testing.assert_raises(TypeError, galsim.DistDeviate,
-                                 function='../examples/data/cosmo-fid.zmed1.00_smoothed.out',
-                                 x_min=1.)
-        np.testing.assert_raises(TypeError, galsim.DistDeviate, function=1.0)
-        np.testing.assert_raises(ValueError, galsim.DistDeviate, function='foo.dat')
-        np.testing.assert_raises(TypeError, galsim.DistDeviate, function = lambda x : x*x,
-                                 interpolant='linear')
-        np.testing.assert_raises(TypeError, galsim.DistDeviate, function = lambda x : x*x)
-        np.testing.assert_raises(TypeError, galsim.DistDeviate, function = lambda x : x*x,
-                                 x_min=1.)
-        test_vals = range(10)
-        np.testing.assert_raises(TypeError, galsim.DistDeviate,
-                                 function=galsim.LookupTable(test_vals, test_vals),
-                                 x_min = 1.)
-        foo = galsim.DistDeviate(10, galsim.LookupTable(test_vals, test_vals))
-        np.testing.assert_raises(ValueError, foo.val, -1.)
-    except ImportError:
-        print('The assert_raises test requires nose')
+    # Make sure it requires an input function in order to work.
+    assert_raises(TypeError, galsim.DistDeviate)
+    # Make sure it does appropriate input sanity checks.
+    assert_raises(TypeError, galsim.DistDeviate,
+                  function='../examples/data/cosmo-fid.zmed1.00_smoothed.out',
+                  x_min=1.)
+    assert_raises(TypeError, galsim.DistDeviate, function=1.0)
+    assert_raises(ValueError, galsim.DistDeviate, function='foo.dat')
+    assert_raises(TypeError, galsim.DistDeviate, function = lambda x : x*x, interpolant='linear')
+    assert_raises(TypeError, galsim.DistDeviate, function = lambda x : x*x)
+    assert_raises(TypeError, galsim.DistDeviate, function = lambda x : x*x, x_min=1.)
+    test_vals = range(10)
+    assert_raises(TypeError, galsim.DistDeviate,
+                  function=galsim.LookupTable(test_vals, test_vals),
+                  x_min = 1.)
+    foo = galsim.DistDeviate(10, galsim.LookupTable(test_vals, test_vals))
+    assert_raises(ValueError, foo.val, -1.)
+    assert_raises(ValueError, galsim.DistDeviate, function = lambda x : -1, x_min=dmin, x_max=dmax)
+    assert_raises(ValueError, galsim.DistDeviate, function = lambda x : x**2-1, x_min=dmin, x_max=dmax)
 
     d = galsim.DistDeviate(testseed, function=dfunction, x_min=dmin, x_max=dmax)
     d2 = d.duplicate()
@@ -1428,6 +1404,21 @@ def test_distfunction():
     np.testing.assert_array_almost_equal(
             np.array(testResult), np.array(dFunctionResult), precision,
             err_msg='Wrong DistDeviate random number sequence generated from serialize')
+
+    # Check val() method
+    # pdf(x) = x^2
+    # cdf(x) = (x/2)^3
+    # val(y) = 2 y^(1/3)
+    np.testing.assert_almost_equal(d.val(0), 0, 4)
+    np.testing.assert_almost_equal(d.val(1), 2, 4)
+    np.testing.assert_almost_equal(d.val(0.125), 1, 4)
+    np.testing.assert_almost_equal(d.val(0.027), 0.6, 4)
+    np.testing.assert_almost_equal(d.val(0.512), 1.6, 4)
+    u = galsim.UniformDeviate(testseed)
+    testResult = (d.val(u()), d.val(u()), d.val(u()))
+    np.testing.assert_array_almost_equal(
+            np.array(testResult), np.array(dFunctionResult), precision,
+            err_msg='Wrong DistDeviate sequence using d.val(u())')
 
     # Check that the mean and variance come out right
     vals = [d() for i in range(nvals)]
@@ -1548,21 +1539,21 @@ def test_distfunction():
     assert c1 != c2, "Consecutive DistDeviate(None) compared equal!"
     # We shouldn't be able to construct a DistDeviate from anything but a BaseDeviate, int, str,
     # or None.
-    try:
-        np.testing.assert_raises(RuntimeError, galsim.DistDeviate, dict(), lambda x:1, 0, 1)
-        np.testing.assert_raises(RuntimeError, galsim.DistDeviate, list(), lambda x:1, 0, 1)
-        np.testing.assert_raises(RuntimeError, galsim.DistDeviate, set(), lambda x:1, 0, 1)
-    except ImportError:
-        print('The assert_raises tests require nose')
+    assert_raises(RuntimeError, galsim.DistDeviate, dict(), lambda x:1, 0, 1)
+    assert_raises(RuntimeError, galsim.DistDeviate, list(), lambda x:1, 0, 1)
+    assert_raises(RuntimeError, galsim.DistDeviate, set(), lambda x:1, 0, 1)
 
 
 @timer
 def test_distLookupTable():
     """Test distribution-defined random number generator with a LookupTable
     """
-    d = galsim.DistDeviate(testseed, function=dLookupTable)
+    precision = 9
+    # Note: 256 used to be the default, so this is a regression test
+    # We check below that it works with the default npoints=None
+    d = galsim.DistDeviate(testseed, function=dLookupTable, npoints=256)
     d2 = d.duplicate()
-    d3 = galsim.DistDeviate(d.serialize(), function=dLookupTable)
+    d3 = galsim.DistDeviate(d.serialize(), function=dLookupTable, npoints=256)
     np.testing.assert_equal(
             d.x_min, dLookupTable.x_min,
             err_msg='DistDeviate and the LookupTable passed to it have different lower bounds')
@@ -1605,6 +1596,14 @@ def test_distLookupTable():
             np.array(testResult), np.array(dLookupTableResult), precision,
             err_msg='Wrong DistDeviate random number sequence for LookupTable with 5 points')
 
+    # And it should also work if npoints is None
+    d = galsim.DistDeviate(testseed, function=dLookupTable)
+    testResult = (d(), d(), d())
+    assert len(dLookupTable.x) == len(d._inverse_cdf.x)
+    np.testing.assert_array_almost_equal(
+            np.array(testResult), np.array(dLookupTableResult), precision,
+            err_msg='Wrong DistDeviate random number sequence for LookupTable with npoints=None')
+
     # Also read these values from a file
     d = galsim.DistDeviate(testseed, function=dLookupTableFile, interpolant='linear')
     testResult = (d(), d(), d())
@@ -1618,6 +1617,22 @@ def test_distLookupTable():
             np.array(testResult), np.array(dLookupTableResult), precision,
             err_msg='Wrong DistDeviate random number sequence for LookupTable with default '
             'interpolant')
+
+    # Test generate
+    d.seed(testseed)
+    test_array = np.empty(3)
+    d.generate(test_array)
+    np.testing.assert_array_almost_equal(
+            test_array, np.array(dLookupTableResult), precision,
+            err_msg='Wrong DistDeviate random number sequence from generate.')
+
+    # Test filling an image
+    d.seed(testseed)
+    testimage = galsim.ImageD(np.zeros((3, 1)))
+    testimage.addNoise(galsim.DeviateNoise(d))
+    np.testing.assert_array_almost_equal(
+            testimage.array.flatten(), np.array(dLookupTableResult), precision,
+            err_msg='Wrong DistDeviate random number sequence generated when applied to image.')
 
     # Test a case with nearly flat probabilities
     # x and p arrays with and without a small (epsilon) step
@@ -1637,29 +1652,18 @@ def test_distLookupTable():
     # If these were successfully created everything is probably fine, but check they create the same
     # internal LookupTable
     np.testing.assert_array_almost_equal(
-            d1._inverseprobabilitytable.getArgs(), d2._inverseprobabilitytable.getArgs(), precision,
+            d1._inverse_cdf.getArgs(), d2._inverse_cdf.getArgs(), precision,
             err_msg='DistDeviate with near-flat probabilities incorrectly created '
                     'a monotonic version of the CDF')
     np.testing.assert_array_almost_equal(
-            d1._inverseprobabilitytable.getVals(), d2._inverseprobabilitytable.getVals(), precision,
+            d1._inverse_cdf.getVals(), d2._inverse_cdf.getVals(), precision,
             err_msg='DistDeviate with near-flat probabilities incorrectly created '
                     'a monotonic version of the CDF')
-
-    # Test generate
-    d.seed(testseed)
-    test_array = np.empty(3)
-    d.generate(test_array)
-    np.testing.assert_array_almost_equal(
-            test_array, np.array(dLookupTableResult), precision,
-            err_msg='Wrong DistDeviate random number sequence from generate.')
-
-    # Test filling an image
-    d.seed(testseed)
-    testimage = galsim.ImageD(np.zeros((3, 1)))
-    testimage.addNoise(galsim.DeviateNoise(d))
-    np.testing.assert_array_almost_equal(
-            testimage.array.flatten(), np.array(dLookupTableResult), precision,
-            err_msg='Wrong DistDeviate random number sequence generated when applied to image.')
+    # And that they generate the same values
+    ar1 = np.empty(100); d1.generate(ar1)
+    ar2 = np.empty(100); d2.generate(ar2)
+    np.testing.assert_array_almost_equal(ar1, ar2, precision,
+            err_msg='Two DistDeviates with near-flat probabilities generated different values.')
 
     # Check picklability
     do_pickle(d, lambda x: (x(), x(), x(), x()))
@@ -1988,11 +1992,9 @@ def test_permute():
     for ind in range(n_list):
         assert my_list_copy[ind_list[ind]] == my_list[ind]
 
-    try:
-        # permute with no lists should raise TypeError
-        np.testing.assert_raises(TypeError, galsim.random.permute, 312)
-    except ImportError:
-        pass
+    # permute with no lists should raise TypeError
+    with assert_raises(TypeError):
+        galsim.random.permute(312)
 
 
 @timer
@@ -2108,15 +2110,11 @@ def test_variable_gaussian_noise():
     assert vgn != vgn2
     assert vgn == vgn3
 
-    try:
-        np.testing.assert_raises(TypeError, noise.applyTo(23))
-        np.testing.assert_raises(ValueError, noise.applyTo(galsim.ImageF(3,3)))
-        np.testing.assert_raises(RuntimeError, noise.getVariance())
-        np.testing.assert_raises(RuntimeError, noise.withVariance(23))
-        np.testing.assert_raises(RuntimeError, noise.withScaledVariance(23))
-    except:
-        pass
-
+    assert_raises(AttributeError, vgn.applyTo, 23)
+    assert_raises(RuntimeError, vgn.applyTo, galsim.ImageF(3,3))
+    assert_raises(RuntimeError, vgn.getVariance)
+    assert_raises(RuntimeError, vgn.withVariance, 23)
+    assert_raises(RuntimeError, vgn.withScaledVariance, 23)
 
 
 if __name__ == "__main__":

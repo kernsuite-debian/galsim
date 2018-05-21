@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -22,6 +22,7 @@ addition of the docstring and few extra features.
 Also, a simple 2D table for gridded input data: LookupTable2D.
 """
 import numpy as np
+import numbers
 
 from . import _galsim
 
@@ -141,7 +142,9 @@ class LookupTable(object):
         # table is the thing the does the actual work.  It is a C++ Table object, wrapped
         # as _LookupTable.  Note x must be sorted.
         s = np.argsort(x)
-        self.table = _galsim._LookupTable(x[s], f[s], interpolant)
+        x = np.ascontiguousarray(x[s])
+        f = np.ascontiguousarray(f[s])
+        self.table = _galsim._LookupTable(x, f, interpolant)
 
         # Get the min/max x values, making sure to account properly for x_log.
         self._x_min = self.table.argMin()
@@ -176,36 +179,26 @@ class LookupTable(object):
         """
         # first, keep track of whether interpolation was done in x or log(x)
         if self.x_log:
-            if np.any(np.array(x) <= 0.):
+            if np.any(np.asarray(x) <= 0.):
                 raise ValueError("Cannot interpolate x<=0 when using log(x) interpolation.")
             x = np.log(x)
 
-        # figure out what we received, and return the same thing
-        # option 1: a NumPy array
-        if isinstance(x, np.ndarray):
+        x = np.asarray(x)
+        if x.shape == ():
+            f = self.table(float(x))
+        else:
             dimen = len(x.shape)
             if dimen > 2:
                 raise ValueError("Arrays with dimension larger than 2 not allowed!")
             elif dimen == 2:
                 f = np.empty_like(x.ravel(), dtype=float)
-                self.table.interpMany(x.astype(float,copy=False).ravel(),f)
+                xx = x.astype(float,copy=False).ravel()
+                self.table.interpMany(xx,f)
                 f = f.reshape(x.shape)
             else:
                 f = np.empty_like(x, dtype=float)
-                self.table.interpMany(x.astype(float,copy=False),f)
-        # option 2: a tuple
-        elif isinstance(x, tuple):
-            f = np.empty_like(x, dtype=float)
-            self.table.interpMany(np.array(x, dtype=float),f)
-            f = tuple(f)
-        # option 3: a list
-        elif isinstance(x, list):
-            f = np.empty_like(x, dtype=float)
-            self.table.interpMany(np.array(x, dtype=float),f)
-            f = list(f)
-        # option 4: a single value
-        else:
-            f = self.table(x)
+                xx = x.astype(float,copy=False)
+                self.table.interpMany(xx,f)
 
         if self.f_log:
             f = np.exp(f)
@@ -502,8 +495,7 @@ class LookupTable2D(object):
         if not self._inbounds(x, y):
             raise ValueError("Extrapolating beyond input range.")
 
-        from numbers import Real
-        if isinstance(x, Real):
+        if isinstance(x, numbers.Real):
             return self.table(x, y)
         else:
             x = np.array(x, dtype=float)
@@ -521,8 +513,7 @@ class LookupTable2D(object):
         return self._call_raise(x, y)
 
     def _call_constant(self, x, y):
-        from numbers import Real
-        if isinstance(x, Real):
+        if isinstance(x, numbers.Real):
             if self._inbounds(x, y):
                 return self.table(x, y)
             else:
@@ -555,11 +546,9 @@ class LookupTable2D(object):
         if not self._inbounds(x, y):
             raise ValueError("Extrapolating beyond input range.")
 
-        try:
-            xx = float(x)
-            yy = float(y)
-            return self.table.gradient(xx, yy)
-        except TypeError:
+        if isinstance(x, numbers.Real):
+            return self.table.gradient(x, y)
+        else:
             dfdx = np.empty_like(x)
             dfdy = np.empty_like(x)
             self.table.gradientMany(x.ravel(), y.ravel(), dfdx.ravel(), dfdy.ravel())
@@ -570,8 +559,7 @@ class LookupTable2D(object):
         return self._gradient_raise(x, y)
 
     def _gradient_constant(self, x, y):
-        from numbers import Real
-        if isinstance(x, Real):
+        if isinstance(x, numbers.Real):
             if self._inbounds(x, y):
                 return self.table.gradient(x, y)
             else:
