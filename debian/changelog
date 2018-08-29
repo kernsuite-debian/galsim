@@ -1,3 +1,13 @@
+galsim (2.0.6-1) bionic; urgency=medium
+
+  [ Athanaseus Javas Ramaila ]
+  * New upstream version 1.6.0
+
+  [ Gijs Molenaar ]
+  * New upstream version 2.0.6
+
+ -- KERN packaging <packaging@kernsuite.info>  Wed, 29 Aug 2018 19:45:15 +0200
+
 galsim (1.6.0-1kern1) bionic; urgency=medium
 
   * New upstream version 1.6.0
