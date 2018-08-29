@@ -29,11 +29,6 @@ import inspect
 # to call to build an object of that type.
 valid_gsobject_types = {}
 
-# A list of gsobject types that define a block of inter-related stamps.  This is only necessary
-# to support the deprecated Ring gsobject type.  Once that feature is fully removed, we can
-# remove this structure.
-block_gsobject_types = []
-
 class SkipThisObject(Exception):
     """
     A class that a builder can throw to indicate that nothing went wrong, but for some
@@ -80,7 +75,7 @@ def BuildGSObject(config, key, base=None, gsparams={}, logger=None):
 
     # Get the type to be parsed.
     if not 'type' in param:
-        raise AttributeError("type attribute required in config.%s"%key)
+        raise galsim.GalSimConfigError("type attribute required in config.%s"%key)
     type_name = param['type']
 
     # If we are repeating, then we get to use the current object for repeat times.
@@ -139,10 +134,9 @@ def BuildGSObject(config, key, base=None, gsparams={}, logger=None):
     # need to get the PSF's half_light_radius.
     if 'resolution' in param:
         if 'psf' not in base:
-            raise AttributeError(
-                "Cannot use gal.resolution if no psf is set.")
+            raise galsim.GalSimConfigError("Cannot use gal.resolution if no psf is set.")
         if 'saved_re' not in base['psf']:
-            raise AttributeError(
+            raise galsim.GalSimConfigError(
                 'Cannot use gal.resolution with psf.type = %s'%base['psf']['type'])
         psf_re = base['psf']['saved_re']
         resolution = galsim.config.ParseValue(param, 'resolution', base, float)[0]
@@ -150,7 +144,7 @@ def BuildGSObject(config, key, base=None, gsparams={}, logger=None):
         if 're_from_res' not in param:
             # The first time, check that half_light_radius isn't also specified.
             if 'half_light_radius' in param:
-                raise AttributeError(
+                raise galsim.GalSimConfigError(
                     'Cannot specify both gal.resolution and gal.half_light_radius')
             param['re_from_res'] = True
         param['half_light_radius'] = gal_re
@@ -168,7 +162,7 @@ def BuildGSObject(config, key, base=None, gsparams={}, logger=None):
     elif type_name in galsim.__dict__:
         build_func = eval("galsim."+type_name)
     else:
-        raise NotImplementedError("Unrecognised config type = %s"%type_name)
+        raise galsim.GalSimConfigValueError("Unrecognised gsobject type", type_name)
 
     if inspect.isclass(build_func) and issubclass(build_func, galsim.GSObject):
         gsobject, safe = _BuildSimple(build_func, param, base, ignore, gsparams, logger)
@@ -179,7 +173,7 @@ def BuildGSObject(config, key, base=None, gsparams={}, logger=None):
     if key == 'psf':
         try:
             param['saved_re'] = gsobject.half_light_radius
-        except AttributeError:
+        except (AttributeError, NotImplementedError, TypeError):
             pass
 
     # Apply any dilation, ellip, shear, etc. modifications.
@@ -194,7 +188,7 @@ def BuildGSObject(config, key, base=None, gsparams={}, logger=None):
 def UpdateGSParams(gsparams, config, base):
     """@brief Add additional items to the `gsparams` dict based on config['gsparams'].
     """
-    opt = galsim.GSObject._gsparams
+    opt = galsim.GSObject._gsparams_opt
     kwargs, safe = galsim.config.GetAllParams(config, base, opt=opt)
     # When we update gsparams, we don't want to corrupt the original, so we need to
     # make a copy first, then update with kwargs.
@@ -252,7 +246,7 @@ def _BuildAdd(config, base, ignore, gsparams, logger):
     gsobjects = []
     items = config['items']
     if not isinstance(items,list):
-        raise AttributeError("items entry for type=Add is not a list.")
+        raise galsim.GalSimConfigError("items entry for type=Add is not a list.")
     safe = True
 
     for i in range(len(items)):
@@ -265,7 +259,7 @@ def _BuildAdd(config, base, ignore, gsparams, logger):
         gsobjects.append(gsobject)
 
     if len(gsobjects) == 0:
-        raise ValueError("No valid items for type=Add")
+        raise galsim.GalSimConfigError("No valid items for type=Add")
     elif len(gsobjects) == 1:
         gsobject = gsobjects[0]
     else:
@@ -306,7 +300,7 @@ def _BuildConvolve(config, base, ignore, gsparams, logger):
     gsobjects = []
     items = config['items']
     if not isinstance(items,list):
-        raise AttributeError("items entry for type=Convolve is not a list.")
+        raise galsim.GalSimConfigError("items entry for type=Convolve is not a list.")
     safe = True
     for i in range(len(items)):
         gsobject, safe1 = BuildGSObject(items, i, base, gsparams, logger)
@@ -314,7 +308,7 @@ def _BuildConvolve(config, base, ignore, gsparams, logger):
         gsobjects.append(gsobject)
 
     if len(gsobjects) == 0:
-        raise ValueError("No valid items for type=Convolve")
+        raise galsim.GalSimConfigError("No valid items for type=Convolve")
     elif len(gsobjects) == 1:
         gsobject = gsobjects[0]
     else:
@@ -340,13 +334,13 @@ def _BuildList(config, base, ignore, gsparams, logger):
 
     items = config['items']
     if not isinstance(items,list):
-        raise AttributeError("items entry for type=List is not a list.")
+        raise galsim.GalSimConfigError("items entry for type=List is not a list.")
 
     # Setup the indexing sequence if it hasn't been specified using the length of items.
     galsim.config.SetDefaultIndex(config, len(items))
     index, safe = galsim.config.ParseValue(config, 'index', base, int)
     if index < 0 or index >= len(items):
-        raise AttributeError("index %d out of bounds for List"%index)
+        raise galsim.GalSimConfigError("index %d out of bounds for List"%index)
 
     gsobject, safe1 = BuildGSObject(items, index, base, gsparams, logger)
     safe = safe and safe1
@@ -373,7 +367,8 @@ def _BuildOpticalPSF(config, base, ignore, gsparams, logger):
         aber_list = [0.0] * 4  # Initial 4 values are ignored.
         aberrations = config['aberrations']
         if not isinstance(aberrations,list):
-            raise AttributeError("aberrations entry for config.OpticalPSF entry is not a list.")
+            raise galsim.GalSimConfigError(
+                "aberrations entry for config.OpticalPSF entry is not a list.")
         for i in range(len(aberrations)):
             value, safe1 = galsim.config.ParseValue(aberrations, i, base, float)
             aber_list.append(value)
@@ -451,24 +446,7 @@ def _Shift(gsobject, config, key, base, logger):
     gsobject = gsobject.shift(shift.x,shift.y)
     return gsobject, safe
 
-def _GetMinimumBlock(config, base):
-    """Get the minimum number of objects that should be done on the same process for a
-    particular object configuration.
-
-    This function is only needed for backwards-compatibility support of gsobject type=Ring.
-
-    @param config       A dict with the configuration information.
-    @param base         The base dict of the configuration. [default: config]
-    """
-    type_name = config.get('type',None)
-    if type_name in block_gsobject_types: # pragma: no cover
-        num = galsim.config.ParseValue(config, 'num', base, int)[0]
-        return num
-    else:
-        return 1
-
-
-def RegisterObjectType(type_name, build_func, input_type=None, _is_block=False):
+def RegisterObjectType(type_name, build_func, input_type=None):
     """Register an object type for use by the config apparatus.
 
     A few notes about the signature of the build functions:
@@ -496,19 +474,10 @@ def RegisterObjectType(type_name, build_func, input_type=None, _is_block=False):
                             type here.  (If it uses more than one, this may be a list.)
                             [default: None]
     """
-    # Note: the _is_block parameter is an undocumented feature only needed to support the
-    # now-deprecated type=Ring.  Once that feature is fully removed, we can remove the _is_block
-    # parameter here.
     valid_gsobject_types[type_name] = build_func
-    if _is_block: # pragma: no cover
-        block_gsobject_types.append(type_name)
     if input_type is not None:
         from .input import RegisterInputConnectedType
-        if isinstance(input_type, list):  # pragma: no cover
-            for key in input_type:
-                RegisterInputConnectedType(key, type_name)
-        else:
-            RegisterInputConnectedType(input_type, type_name)
+        RegisterInputConnectedType(input_type, type_name)
 
 RegisterObjectType('None', _BuildNone)
 RegisterObjectType('Add', _BuildAdd)

@@ -22,14 +22,9 @@ import os
 import sys
 import time
 
+import galsim
 from galsim_test_helpers import *
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 @timer
 def test_simple():
@@ -297,10 +292,18 @@ def test_silicon():
     do_pickle(s1)
     do_pickle(s7)
 
-    assert_raises(IOError, galsim.SiliconSensor, name='junk')
-    assert_raises(IOError, galsim.SiliconSensor, name='output')
-    assert_raises(RuntimeError, galsim.SiliconSensor, rng=3.4)
+    assert_raises(OSError, galsim.SiliconSensor, name='junk')
+    assert_raises(OSError, galsim.SiliconSensor, name='output')
+    assert_raises(TypeError, galsim.SiliconSensor, rng=3.4)
     assert_raises(TypeError, galsim.SiliconSensor, 'lsst_itl_8', rng1)
+
+    # Invalid to accumulate onto undefined image.
+    photons = galsim.PhotonArray(3)
+    image = galsim.ImageD()
+    with assert_raises(galsim.GalSimUndefinedBoundsError):
+        simple.accumulate(photons, image)
+    with assert_raises(galsim.GalSimUndefinedBoundsError):
+        silicon.accumulate(photons, image)
 
 
 @timer
@@ -357,10 +360,11 @@ def test_silicon_fft():
     np.testing.assert_allclose(r2, r3, atol=2.*sigma_r)
 
     # Repeat with 20X more photons where the brighter-fatter effect should kick in more.
+    # (Also not in true_center, to hit a different branch about offset in the drawImage code.)
     obj *= 200
-    obj.drawImage(im1, method='fft', sensor=silicon, rng=rng)
-    obj.drawImage(im2, method='fft', sensor=simple, rng=rng)
-    obj.drawImage(im3, method='fft')
+    obj.drawImage(im1, method='fft', sensor=silicon, rng=rng, use_true_center=False)
+    obj.drawImage(im2, method='fft', sensor=simple, rng=rng, use_true_center=False)
+    obj.drawImage(im3, method='fft', use_true_center=False)
 
     r1 = im1.calculateMomentRadius(flux=obj.flux)
     r2 = im2.calculateMomentRadius(flux=obj.flux)
@@ -745,6 +749,10 @@ def test_treerings():
             np.testing.assert_almost_equal(ref_mom['My'] + treering_amplitude * center[1] / 1000,
                                            mom['My'], decimal=1)
 
+    assert_raises(TypeError, galsim.SiliconSensor, treering_func=lambda x:np.cos(x))
+    assert_raises(TypeError, galsim.SiliconSensor, treering_func=tr7, treering_center=(3,4))
+
+
 @timer
 def test_resume():
     """Test that the resume option for accumulate works properly.
@@ -980,7 +988,6 @@ def test_flat():
     np.testing.assert_allclose(cov11b / counts_total, 0., atol=2*toler)
     np.testing.assert_allclose(cov20 / counts_total, 0., atol=2*toler)
     np.testing.assert_allclose(cov02 / counts_total, 0., atol=2*toler)
-
 
 if __name__ == "__main__":
     test_simple()

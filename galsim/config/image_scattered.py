@@ -52,28 +52,19 @@ class ScatteredImageBuilder(ImageBuilder):
         opt = { 'size' : int , 'xsize' : int , 'ysize' : int }
         params = galsim.config.GetAllParams(config, base, opt=opt, ignore=ignore+extra_ignore)[0]
 
-        # Special check for the size.  Either size or both xsize and ysize is required.
-        if 'size' not in params:
-            if 'xsize' not in params or 'ysize' not in params:
-                raise AttributeError(
-                    "Either size or both xsize and ysize is required for image.type=Scattered")
-            full_xsize = params['xsize']
-            full_ysize = params['ysize']
-        else:
-            if 'xsize' in params:
-                raise AttributeError(
-                    "Attributes xsize is invalid if size is set for image.type=Scattered")
-            if 'ysize' in params:
-                raise AttributeError(
-                    "Attributes ysize is invalid if size is set for image.type=Scattered")
-            full_xsize = params['size']
-            full_ysize = params['size']
+        size = params.get('size',0)
+        full_xsize = params.get('xsize',size)
+        full_ysize = params.get('ysize',size)
+
+        if (full_xsize <= 0) or (full_ysize <= 0):
+            raise galsim.GalSimConfigError(
+                "Both image.xsize and image.ysize need to be defined and > 0.")
 
         # If image_force_xsize and image_force_ysize were set in config, make sure it matches.
         if ( ('image_force_xsize' in base and full_xsize != base['image_force_xsize']) or
              ('image_force_ysize' in base and full_ysize != base['image_force_ysize']) ):
-            raise ValueError(
-                "Unable to reconcile required image xsize and ysize with provided "+
+            raise galsim.GalSimConfigError(
+                "Unable to reconcile required image xsize and ysize with provided "
                 "xsize=%d, ysize=%d, "%(full_xsize,full_ysize))
 
         return full_xsize, full_ysize
@@ -101,7 +92,9 @@ class ScatteredImageBuilder(ImageBuilder):
         base['current_image'] = full_image
 
         if 'image_pos' in config and 'world_pos' in config:
-            raise AttributeError("Both image_pos and world_pos specified for Scattered image.")
+            raise galsim.GalSimConfigValueError(
+                "Both image_pos and world_pos specified for Scattered image.",
+                (config['image_pos'], config['world_pos']))
 
         if 'image_pos' not in config and 'world_pos' not in config:
             xmin = base['image_origin'].x
@@ -130,9 +123,9 @@ class ScatteredImageBuilder(ImageBuilder):
                 full_image[bounds] += stamps[k][bounds]
             else:
                 logger.info(
-                    "Object centered at (%d,%d) is entirely off the main image,\n"%(
-                        stamps[k].center.x, stamps[k].center.y) +
+                    "Object centered at (%d,%d) is entirely off the main image, "
                     "whose bounds are (%d,%d,%d,%d)."%(
+                        stamps[k].center.x, stamps[k].center.y,
                         full_image.bounds.xmin, full_image.bounds.xmax,
                         full_image.bounds.ymin, full_image.bounds.ymax))
 
@@ -190,7 +183,8 @@ class ScatteredImageBuilder(ImageBuilder):
         if 'nobjects' not in config:
             nobj = galsim.config.ProcessInputNObjects(base)
             if nobj is None:
-                raise AttributeError("Attribute nobjects is required for image.type = Scattered")
+                raise galsim.GalSimConfigError(
+                    "Attribute nobjects is required for image.type = Scattered")
         else:
             nobj = galsim.config.ParseValue(config,'nobjects',base,int)[0]
         base['index_key'] = orig_index_key

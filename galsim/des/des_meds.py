@@ -78,51 +78,55 @@ class MultiExposureObject(object):
         if not isinstance(images,list):
             raise TypeError('images should be a list')
         if len(images) == 0:
-            raise ValueError('no cutouts in this object')
+            raise galsim.GalSimValueError('no cutouts in this object', images)
 
         # Check that the box sizes are valid
         for i in range(len(images)):
             s = images[i].array.shape
             if s[0] != s[1]:
-                raise ValueError('Array shape %s is invalid.  Must be square'%(str(s)))
+                raise galsim.GalSimValueError('Array shape %s is invalid.  Must be square'%(str(s)),
+                                              images[i])
             if s[0] not in BOX_SIZES:
-                raise ValueError('Array shape %s is invalid.  Size must be in %s'%(
-                        str(s),str(BOX_SIZES)))
+                raise galsim.GalSimValueError('Array shape %s is invalid.  Size must be in %s'%(
+                                              str(s),str(BOX_SIZES)), images[i])
             if i > 0 and s != images[0].array.shape:
-                raise ValueError('Images must all be the same shape')
+                raise galsim.GalSimValueError('Images must all be the same shape', images)
 
         # The others are optional, but if given, make sure they are ok.
-        for lst, name, isim in [ (weight, 'weight', True), (badpix, 'badpix', True),
-                                 (seg, 'seg', True), (psf, 'psf', False), (wcs, 'wcs', False) ]:
+        for lst, name, isim in ( (weight, 'weight', True), (badpix, 'badpix', True),
+                                 (seg, 'seg', True), (psf, 'psf', False), (wcs, 'wcs', False) ):
             if lst is not None:
                 if not isinstance(lst,list):
                     raise TypeError('%s should be a list'%name)
                 if len(lst) != len(images):
-                    raise ValueError('%s is the wrong length'%name)
+                    raise galsim.GalSimValueError('%s is the wrong length'%name, lst)
                 if isim:
                     for i in range(len(images)):
                         im1 = lst[i]
                         im2 = images[i]
                         if (im1.array.shape != im2.array.shape):
-                            raise ValueError("%s[%d] has the wrong shape."%(name, i))
+                            raise galsim.GalSimValueError(
+                                "%s[%d] has the wrong shape."%(name, i), im1)
 
         # The PSF images don't have to be the same shape as the main images.
         # But make sure all psf images are square and the same shape
         if psf is not None:
             s = psf[i].array.shape
             if s[0] != s[1]:
-                raise ValueError('PSF array shape %s is invalid.  Must be square'%(str(s)))
+                raise galsim.GalSimValueError(
+                    'PSF array shape %s is invalid.  Must be square'%(str(s)), psf[i])
             if s[0] not in BOX_SIZES:
-                raise ValueError('PSF array shape %s is invalid.  Size must be in %s'%(
-                        str(s),str(BOX_SIZES)))
+                raise galsim.GalSimValueError(
+                    'PSF array shape %s is invalid.  Size must be in %s'%(
+                        str(s),str(BOX_SIZES)), psf[i])
             if i > 0 and s != psf[0].array.shape:
-                raise ValueError('PSF images must all be the same shape')
+                raise galsim.GalSimValueError('PSF images must all be the same shape', psf[i])
 
         # Check that wcs are Uniform and convert them to AffineTransforms in case they aren't.
         if wcs is not None:
             for i in range(len(wcs)):
                 if not isinstance(wcs[i], galsim.wcs.UniformWCS):
-                    raise TypeError('wcs list should contain UniformWCS objects')
+                    raise galsim.GalSimValueError('wcs list should contain UniformWCS objects', wcs)
                 elif not isinstance(wcs[i], galsim.AffineTransform):
                     wcs[i] = wcs[i].affine()
 
@@ -265,7 +269,8 @@ def WriteMEDS(obj_list, file_name, clobber=True):
             vec['image'].append(obj.images[i].array.flatten())
             vec['seg'].append(obj.seg[i].array.flatten())
             vec['weight'].append(obj.weight[i].array.flatten())
-            vec['psf'].append(obj.psf[i].array.flatten())
+            if obj.psf is not None:
+                vec['psf'].append(obj.psf[i].array.flatten())
 
             # append cutout_row/col
             cutout_row[i] = obj.cutout_row[i]
@@ -281,9 +286,9 @@ def WriteMEDS(obj_list, file_name, clobber=True):
 
             # check if we are running out of memory
             if sys.getsizeof(vec) > MAX_MEMORY:  # pragma: no cover
-                raise MemoryError(
-                    'Running out of memory > %1.0fGB '%MAX_MEMORY/1.e9 +
-                    '- you can increase the limit by changing MAX_MEMORY')
+                raise galsim.GalSimError(
+                    "Running out of memory > %1.0fGB - you can increase the limit by changing "
+                    "galsim.des_meds.MAX_MEMORY"%(MAX_MEMORY/1.e9))
 
         # update the start rows fields in the catalog
         cat['start_row'].append(start_rows)
@@ -303,7 +308,8 @@ def WriteMEDS(obj_list, file_name, clobber=True):
     vec['image'] = np.concatenate(vec['image'])
     vec['seg'] = np.concatenate(vec['seg'])
     vec['weight'] = np.concatenate(vec['weight'])
-    vec['psf'] = np.concatenate(vec['psf'])
+    if obj.psf is not None:
+        vec['psf'] = np.concatenate(vec['psf'])
 
     # get the primary HDU
     primary = pyfits.PrimaryHDU()
@@ -412,13 +418,11 @@ def WriteMEDS(obj_list, file_name, clobber=True):
         metadata.update_ext_name('metadata')
 
     # rest of HDUs are image vectors
-    image_cutouts   = pyfits.ImageHDU( vec['image'] , name='image_cutouts'  )
-    weight_cutouts  = pyfits.ImageHDU( vec['weight'], name='weight_cutouts' )
-    seg_cutouts     = pyfits.ImageHDU( vec['seg']   , name='seg_cutouts'    )
-    psf_cutouts     = pyfits.ImageHDU( vec['psf']   , name='psf'            )
+    image_cutouts   = pyfits.ImageHDU( vec['image'] , name='image_cutouts')
+    weight_cutouts  = pyfits.ImageHDU( vec['weight'], name='weight_cutouts')
+    seg_cutouts     = pyfits.ImageHDU( vec['seg']   , name='seg_cutouts')
 
-    # write all
-    hdu_list = pyfits.HDUList([
+    hdu_list = [
         primary,
         object_data,
         image_info,
@@ -426,9 +430,13 @@ def WriteMEDS(obj_list, file_name, clobber=True):
         image_cutouts,
         weight_cutouts,
         seg_cutouts,
-        psf_cutouts
-    ])
-    galsim.fits.writeFile(file_name, hdu_list)
+    ]
+
+    if obj.psf is not None:
+        psf_cutouts     = pyfits.ImageHDU( vec['psf'], name='psf')
+        hdu_list.append(psf_cutouts)
+
+    galsim.fits.writeFile(file_name, pyfits.HDUList(hdu_list))
 
 
 # Make the class that will
@@ -452,10 +460,9 @@ class MEDSBuilder(galsim.config.OutputBuilder):
         import time
         t1 = time.time()
 
-        if 'image' in base and 'type' in base['image']:
-            image_type = base['image']['type']
-            if image_type != 'Single':
-                raise AttibuteError("MEDS files are not compatible with image type %s."%image_type)
+        if base.get('image',{}).get('type', 'Single') != 'Single':
+            raise galsim.GalSimConfigError(
+                "MEDS files are not compatible with image type %s."%base['image']['type'])
 
         req = { 'nobjects' : int , 'nstamps_per_object' : int }
         ignore += [ 'file_name', 'dir', 'nfiles' ]

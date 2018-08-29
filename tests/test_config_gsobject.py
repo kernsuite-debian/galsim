@@ -21,14 +21,8 @@ import numpy as np
 import os
 import sys
 
+import galsim
 from galsim_test_helpers import *
-
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 
 @timer
@@ -53,6 +47,14 @@ def test_gaussian():
                    'shear' : galsim.Shear(g1=-0.15, g2=0.2)
                  },
         'gal6' : { 'type' : 'DeltaFunction' , 'flux' : 72.5 },
+        'bad1' : { 'type' : 'Gaussian' , 'fwhm' : 2, 'sigma' : 3, 'flux' : 100 },
+        'bad2' : { 'type' : 'Gaussian' },
+        'bad3' : { 'type' : 'Gaussian', 'sig' : 4 },
+        'bad4' : { 'sigma' : 2 },
+        'bad5' : { 'type' : 'Gauss', 'sigma' : 2 },
+        'bad6' : { 'type' : 'Gaussian', 'resolution' : 1.5 },  # requires psf field.
+        'bad7' : { 'type' : 'Gaussian', 'sigma' : 2, 'resolution' : 1.5 }, # can't give sigma
+        'bad8' : { 'type' : 'Gaussian', 'half_light_radius' : 2, 'resolution' : 1.5 }, # or hlr
      }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -86,6 +88,41 @@ def test_gaussian():
     gal6c = galsim.Gaussian(sigma = 1.e-10, flux = 72.5)
     gsobject_compare(gal6a, gal6c, conv=galsim.Gaussian(sigma=0.01))
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad4')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad5')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad6')
+
+    # Test various invalid ways to use resolution.
+    # This psf cannot be used for resolution, since no half_light_radius field.
+    psf_file = os.path.join('SBProfile_comparison_images','gauss_smallshear.fits')
+    config['psf'] = { 'type' : 'InterpolatedImage', 'image' : psf_file }
+    psf = galsim.config.BuildGSObject(config, 'psf')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad6')
+    # This has half_light_radius, but it raises an exception for obscuration != 1
+    config['psf'] = { 'type' : 'Airy' , 'lam_over_diam' : 0.4, 'obscuration' : 0.3 }
+    psf = galsim.config.BuildGSObject(config, 'psf')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad6')
+    # This finally works.
+    config['psf'] = { 'type' : 'Airy' , 'lam_over_diam' : 0.4 }
+    psf = galsim.config.BuildGSObject(config, 'psf')
+    gal = galsim.config.BuildGSObject(config, 'bad6')
+    # Can't give a different size along with resolution.
+    with assert_raises(galsim.GalSimConfigError):
+        gal = galsim.config.BuildGSObject(config, 'bad7')
+    with assert_raises(galsim.GalSimConfigError):
+        gal = galsim.config.BuildGSObject(config, 'bad8')
+
 
 @timer
 def test_moffat():
@@ -107,6 +144,9 @@ def test_moffat():
                    'shear' : galsim.Shear(g1=-0.15, g2=0.2),
                    'gsparams' : { 'maxk_threshold' : 1.e-2 }
                  },
+        'bad1' : { 'type' : 'Moffat' , 'beta' : 1.4, 'scale_radius' : 2, 'fwhm' : 3 },
+        'bad2' : { 'type' : 'Moffat' , 'beta' : 1.4 },
+        'bad3' : { 'type' : 'Moffat' , 'beth' : 1.4, 'fwhm' : 8 },
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -143,6 +183,13 @@ def test_moffat():
     with assert_raises(AssertionError):
         gsobject_compare(gal5a, gal5c, conv=galsim.Gaussian(sigma=0.01))
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
+
 
 @timer
 def test_airy():
@@ -163,7 +210,10 @@ def test_airy():
         'gal5' : { 'type' : 'Airy' , 'lam_over_diam' : 45,
                    'gsparams' : { 'xvalue_accuracy' : 1.e-2 }
                  },
-        'gal6' : { 'type' : 'Airy' , 'lam' : 400., 'diam' : 4.0, 'scale_unit' : 'arcmin' }
+        'gal6' : { 'type' : 'Airy' , 'lam' : 400., 'diam' : 4.0, 'scale_unit' : 'arcmin' },
+        'bad1' : { 'type' : 'Airy' , 'lam_over_diam' : 0.4, 'lam' : 400, 'diam' : 10 },
+        'bad2' : { 'type' : 'Airy' , 'flux' : 1.3 },
+        'bad3' : { 'type' : 'Airy' , 'lam_over_diam' : 0.4, 'obsc' : 0.3, 'flux' : 100 },
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -202,6 +252,13 @@ def test_airy():
     with assert_raises(AssertionError):
         gsobject_compare(gal5a, gal5c)
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
+
 
 @timer
 def test_kolmogorov():
@@ -213,7 +270,7 @@ def test_kolmogorov():
         'gal3' : { 'type' : 'Kolmogorov' , 'half_light_radius' : 2, 'flux' : 1.e6,
                    'ellip' : { 'type' : 'QBeta' , 'q' : 0.6, 'beta' : 0.39 * galsim.radians }
                  },
-        'gal4' : { 'type' : 'Kolmogorov' , 'lam_over_r0' : 1, 'flux' : 50,
+        'gal4' : { 'type' : 'Kolmogorov' , 'lam' : 400, 'r0_500' : 0.15, 'flux' : 50,
                    'dilate' : 3, 'ellip' : galsim.Shear(e1=0.3),
                    'rotate' : 12 * galsim.degrees,
                    'magnify' : 1.03, 'shear' : galsim.Shear(g1=0.03, g2=-0.05),
@@ -221,7 +278,10 @@ def test_kolmogorov():
                  },
         'gal5' : { 'type' : 'Kolmogorov' , 'lam_over_r0' : 1, 'flux' : 50,
                    'gsparams' : { 'integration_relerr' : 1.e-2, 'integration_abserr' : 1.e-4 }
-                 }
+                 },
+        'bad1' : { 'type' : 'Kolmogorov' , 'fwhm' : 2, 'lam_over_r0' : 3, 'flux' : 100 },
+        'bad2' : { 'type' : 'Kolmogorov', 'flux' : 100 },
+        'bad3' : { 'type' : 'Kolmogorov' , 'lam_over_r0' : 2, 'lam' : 400, 'r0' : 0.15 },
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -238,7 +298,7 @@ def test_kolmogorov():
     gsobject_compare(gal3a, gal3b)
 
     gal4a = galsim.config.BuildGSObject(config, 'gal4')[0]
-    gal4b = galsim.Kolmogorov(lam_over_r0 = 1, flux = 50)
+    gal4b = galsim.Kolmogorov(lam=400, r0_500=0.15, flux = 50)
     gal4b = gal4b.dilate(3).shear(e1 = 0.3).rotate(12 * galsim.degrees)
     gal4b = gal4b.lens(0.03, -0.05, 1.03).shift(dx = 0.7, dy = -1.2)
     gsobject_compare(gal4a, gal4b)
@@ -253,6 +313,12 @@ def test_kolmogorov():
     with assert_raises(AssertionError):
         gsobject_compare(gal5a, gal5c)
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
 
 @timer
 def test_opticalpsf():
@@ -285,7 +351,13 @@ def test_opticalpsf():
                        os.path.join(".","Optics_comparison_images","sample_pupil_rolled.fits"),
                    'pupil_angle' : 27.*galsim.degrees },
         'gal6' : {'type' : 'OpticalPSF' , 'lam' : 874.0, 'diam' : 7.4, 'flux' : 70.,
-                  'obscuration' : 0.1 }
+                  'aberrations' : [0.06, 0.12, -0.08, 0.07, 0.04, 0.0, 0.0, -0.13],
+                  'obscuration' : 0.1 },
+        'gal7' : {'type' : 'OpticalPSF' , 'lam' : 874.0, 'diam' : 7.4, 'aberrations' : []},
+        'bad1' : {'type' : 'OpticalPSF' , 'lam' : 874.0, 'diam' : 7.4, 'lam_over_diam' : 0.2},
+        'bad2' : {'type' : 'OpticalPSF' , 'lam_over_diam' : 0.2,
+                  'aberrations' : "0.06, 0.12, -0.08, 0.07, 0.04, 0.0, 0.0, -0.13"},
+        'bad3' : {'type' : 'OpticalPSF' , 'lam_over_diam' : 0.2, 'aberr' : []},
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -323,8 +395,22 @@ def test_opticalpsf():
     gsobject_compare(gal5a, gal5b)
 
     gal6a = galsim.config.BuildGSObject(config, 'gal6')[0]
-    gal6b = galsim.OpticalPSF(lam=874., diam=7.4, flux=70., obscuration=0.1)
+    aberrations = np.zeros(12, dtype=float)
+    aberrations[4:] = [0.06, 0.12, -0.08, 0.07, 0.04, 0.0, 0.0, -0.13]
+    gal6b = galsim.OpticalPSF(lam=874., diam=7.4, flux=70., obscuration=0.1,
+                              aberrations=aberrations)
     gsobject_compare(gal6a, gal6b)
+
+    gal7a = galsim.config.BuildGSObject(config, 'gal7')[0]
+    gal7b = galsim.OpticalPSF(lam=874., diam=7.4)
+    gsobject_compare(gal7a, gal7b)
+
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
 
 
 @timer
@@ -345,7 +431,9 @@ def test_exponential():
                  },
         'gal5' : { 'type' : 'Exponential' , 'scale_radius' : 1, 'flux' : 50,
                    'gsparams' : { 'kvalue_accuracy' : 1.e-2 }
-                 }
+                 },
+        'bad1' : { 'type' : 'Exponential' , 'scale_radius' : 2, 'half_light_radius' : 3 },
+        'bad2' : { 'type' : 'Exponential' },
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -377,6 +465,10 @@ def test_exponential():
     with assert_raises(AssertionError):
         gsobject_compare(gal5a, gal5c, conv=galsim.Gaussian(sigma=1))
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
 
 @timer
 def test_sersic():
@@ -403,7 +495,11 @@ def test_sersic():
         'gal7' : { 'type' : 'Sersic' , 'n' : 3.2,  'half_light_radius' : 1.7, 'flux' : 50,
                    'trunc' : 4.3,
                    'gsparams' : { 'realspace_relerr' : 1.e-2 , 'realspace_abserr' : 1.e-4 }
-                 }
+                 },
+        'bad1' : { 'type' : 'Sersic' , 'n' : 0.1,  'half_light_radius' : 3.5 },
+        'bad2' : { 'type' : 'Sersic' , 'n' : 11.1,  'half_light_radius' : 3.5 },
+        'bad3' : { 'type' : 'Sersic' , 'n' : 1.1 },
+        'bad4' : { 'type' : 'Sersic' , 'n' : 1.1,  'half_light_radius' : 3.5, 'scale_radius' : 2 },
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -443,7 +539,7 @@ def test_sersic():
     # and would be rather slow.
     gal6a = galsim.config.BuildGSObject(config, 'gal6')[0]
     gal6b = galsim.Sersic(n=0.7, half_light_radius=1, flux=50)
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimFFTSizeError):
         gsobject_compare(gal6a, gal6b, conv=galsim.Gaussian(sigma=1))
 
     gal7a = galsim.config.BuildGSObject(config, 'gal7')[0]
@@ -457,6 +553,15 @@ def test_sersic():
     gal7c = galsim.Sersic(n=3.2, half_light_radius=1.7, flux=50, trunc=4.3)
     with assert_raises(AssertionError):
         gsobject_compare(gal7a, gal7c, conv=conv)
+
+    with assert_raises(galsim.GalSimRangeError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimRangeError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad4')
 
 
 @timer
@@ -533,6 +638,12 @@ def test_inclined_exponential():
                    'half_light_radius' : 1, 'flux' : 50,
                    'gsparams' : { 'minimum_fft_size' : 256 }
                  },
+        'bad1' : { 'type' : 'InclinedExponential' , 'inclination' : 0.7 * galsim.radians,
+                   'half_light_radius' : 1, 'scale_radius' : 2 },
+        'bad2' : { 'type' : 'InclinedExponential' , 'inclination' : 0.7 * galsim.radians,
+                   'scale_h_over_r' : 0.2 },
+        'bad3' : { 'type' : 'InclinedExponential' , 'inclination' : 0.7 * galsim.radians,
+                   'scale_radius' : 1, 'scale_h_over_r' : 0.2, 'scale_height' : 0.1 },
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -558,14 +669,22 @@ def test_inclined_exponential():
 
     gal5a = galsim.config.BuildGSObject(config, 'gal5')[0]
     gsparams = galsim.GSParams(minimum_fft_size=256)
-    gal5b = galsim.InclinedExponential(inclination=0.7 * galsim.radians, half_light_radius=1, flux=50, gsparams=gsparams)
+    gal5b = galsim.InclinedExponential(inclination=0.7 * galsim.radians, half_light_radius=1,
+                                       flux=50, gsparams=gsparams)
     gsobject_compare(gal5a, gal5b, conv=galsim.Gaussian(sigma=1))
 
     # Make sure they don't match when using the default GSParams
-    gal5c = galsim.InclinedExponential(inclination=0.7 * galsim.radians, half_light_radius=1, flux=50)
+    gal5c = galsim.InclinedExponential(inclination=0.7 * galsim.radians, half_light_radius=1,
+                                       flux=50)
     with assert_raises(AssertionError):
         gsobject_compare(gal5a, gal5c, conv=galsim.Gaussian(sigma=1))
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimError):
+        galsim.config.BuildGSObject(config, 'bad3')
 
 @timer
 def test_inclined_sersic():
@@ -598,7 +717,8 @@ def test_inclined_sersic():
     gsobject_compare(gal1a, gal1b)
 
     gal2a = galsim.config.BuildGSObject(config, 'gal2')[0]
-    gal2b = galsim.InclinedSersic(n=3.5, inclination=21 * galsim.degrees, scale_radius=0.007, flux=100)
+    gal2b = galsim.InclinedSersic(n=3.5, inclination=21 * galsim.degrees, scale_radius=0.007,
+                                  flux=100)
     gsobject_compare(gal2a, gal2b)
 
     gal3a = galsim.config.BuildGSObject(config, 'gal3')[0]
@@ -616,11 +736,13 @@ def test_inclined_sersic():
 
     gal5a = galsim.config.BuildGSObject(config, 'gal5')[0]
     gsparams = galsim.GSParams(minimum_fft_size=256)
-    gal5b = galsim.InclinedSersic(n=0.7, inclination=0.7 * galsim.radians, half_light_radius=1, flux=50, gsparams=gsparams)
+    gal5b = galsim.InclinedSersic(n=0.7, inclination=0.7 * galsim.radians, half_light_radius=1,
+                                  flux=50, gsparams=gsparams)
     gsobject_compare(gal5a, gal5b, conv=galsim.Gaussian(sigma=1))
 
     # Make sure they don't match when using the default GSParams
-    gal5c = galsim.InclinedSersic(n=0.7, inclination=0.7 * galsim.radians, half_light_radius=1, flux=50)
+    gal5c = galsim.InclinedSersic(n=0.7, inclination=0.7 * galsim.radians, half_light_radius=1,
+                                  flux=50)
     with assert_raises(AssertionError):
         gsobject_compare(gal5a, gal5c, conv=galsim.Gaussian(sigma=1))
 
@@ -651,24 +773,18 @@ def test_pixel():
     gal2b = galsim.Pixel(scale = 1.7, flux = 100)
     gsobject_compare(gal2a, gal2b)
 
-    # The config stuff emits a warning about the rectangular pixel.
-    # We suppress that here, since we're doing it on purpose.
-    import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    gal3a = galsim.config.BuildGSObject(config, 'gal3')[0]
+    gal3b = galsim.Box(width = 2, height = 2.1, flux = 1.e6)
+    gal3b = gal3b.shear(q = 0.6, beta = 0.39 * galsim.radians)
+    # Drawing sheared Pixel without convolution doesn't work, so we need to
+    # do the extra convolution by a Gaussian here
+    gsobject_compare(gal3a, gal3b, conv=galsim.Gaussian(0.1))
 
-        gal3a = galsim.config.BuildGSObject(config, 'gal3')[0]
-        gal3b = galsim.Box(width = 2, height = 2.1, flux = 1.e6)
-        gal3b = gal3b.shear(q = 0.6, beta = 0.39 * galsim.radians)
-        # Drawing sheared Pixel without convolution doesn't work, so we need to
-        # do the extra convolution by a Gaussian here
-        gsobject_compare(gal3a, gal3b, conv=galsim.Gaussian(0.1))
-
-        gal4a = galsim.config.BuildGSObject(config, 'gal4')[0]
-        gal4b = galsim.Box(width = 1, height = 1.2, flux = 50)
-        gal4b = gal4b.dilate(3).shear(e1 = 0.3).rotate(12 * galsim.degrees).magnify(1.03)
-        gal4b = gal4b.shear(g1 = 0.03, g2 = -0.05).shift(dx = 0.7, dy = -1.2)
-        gsobject_compare(gal4a, gal4b, conv=galsim.Gaussian(0.1))
+    gal4a = galsim.config.BuildGSObject(config, 'gal4')[0]
+    gal4b = galsim.Box(width = 1, height = 1.2, flux = 50)
+    gal4b = gal4b.dilate(3).shear(e1 = 0.3).rotate(12 * galsim.degrees).magnify(1.03)
+    gal4b = gal4b.shear(g1 = 0.03, g2 = -0.05).shift(dx = 0.7, dy = -1.2)
+    gsobject_compare(gal4a, gal4b, conv=galsim.Gaussian(0.1))
 
 @timer
 def test_realgalaxy():
@@ -701,7 +817,9 @@ def test_realgalaxy():
         'gal7' : { 'type' : 'RealGalaxy' , 'random' : True},
         # I admit the one below is odd (why would you specify "random" and have it be False?) but
         # one could imagine setting it based on some probabilistic process...
-        'gal8' : { 'type' : 'RealGalaxy' , 'random' : False}
+        'gal8' : { 'type' : 'RealGalaxy' , 'random' : False},
+        'bad1' : { 'type' : 'RealGalaxy' , 'index' : -3 },
+        'bad2' : { 'type' : 'RealGalaxy' , 'index' : 3000 },
     }
     rng = galsim.UniformDeviate(1234)
     config['rng'] = galsim.UniformDeviate(1234) # A second copy starting with the same seed.
@@ -775,6 +893,12 @@ def test_realgalaxy():
     gal8b = galsim.RealGalaxy(real_cat, index=7)
     gsobject_compare(gal8a, gal8b, conv=conv)
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+
+
 @timer
 def test_cosmosgalaxy():
     """Test various ways to build a COSMOSGalaxy
@@ -843,7 +967,7 @@ def test_cosmosgalaxy():
     gsobject_compare(gal3a, gal3b, conv=conv)
 
     config['obj_num'] = 3
-    with assert_raises(IndexError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildGSObject(config, 'gal4')
 
     # One more test: make sure that if we specified from the start not to use real galaxies, that
@@ -872,9 +996,7 @@ def test_cosmosgalaxy():
 
     config['obj_num'] = 0
     # It is going to complain that it doesn't have weight factors.  We want to ignore this.
-    import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with assert_warns(galsim.GalSimWarning):
         gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
         gal1b = cosmos_cat.makeGalaxy(rng=rng)
     gsobject_compare(gal1a, gal1b, conv=conv)
@@ -898,10 +1020,10 @@ def test_interpolated_image():
                    'x_interpolant' : 'lanczos5', 'scale' : 0.7, 'flux' : 1.e5
                  },
         'gal5' : { 'type' : 'InterpolatedImage', 'image' : file_name,
-                   'noise_pad' : 0.001
+                   'noise_pad' : 0.001, 'noise_pad_size' : 64,
                  },
         'gal6' : { 'type' : 'InterpolatedImage', 'image' : file_name,
-                   'noise_pad' : 'fits_files/blankimg.fits'
+                   'noise_pad' : 'fits_files/blankimg.fits', 'noise_pad_size' : 64,
                  },
         'gal7' : { 'type' : 'InterpolatedImage', 'image' : file_name,
                    'pad_image' : 'fits_files/blankimg.fits'
@@ -932,11 +1054,12 @@ def test_interpolated_image():
     gsobject_compare(gal4a, gal4b)
 
     gal5a = galsim.config.BuildGSObject(config, 'gal5')[0]
-    gal5b = galsim.InterpolatedImage(im, rng=rng, noise_pad=0.001)
+    gal5b = galsim.InterpolatedImage(im, rng=rng, noise_pad=0.001, noise_pad_size=64)
     gsobject_compare(gal5a, gal5b)
 
     gal6a = galsim.config.BuildGSObject(config, 'gal6')[0]
-    gal6b = galsim.InterpolatedImage(im, rng=rng, noise_pad='fits_files/blankimg.fits')
+    gal6b = galsim.InterpolatedImage(im, rng=rng, noise_pad='fits_files/blankimg.fits',
+                                     noise_pad_size=64)
     gsobject_compare(gal6a, gal6b)
 
     gal7a = galsim.config.BuildGSObject(config, 'gal7')[0]
@@ -1043,6 +1166,21 @@ def test_add():
             ],
             'flux' : 170.
         },
+        'bad1' : {
+            'type' : 'Add' ,
+            'items' : { 'type' : 'Gaussian', 'sigma' : 2, 'flux' : 0.3 },
+        },
+        'bad2' : {
+            'type' : 'Add' ,
+            'items' :  [],
+        },
+        'bad3' : {
+            'type' : 'Add',
+            'items' :  'invalid',
+        },
+        'bad4' : {
+            'type' : 'Add',
+        },
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -1116,6 +1254,15 @@ def test_add():
     assert ("Warning: Automatic flux for the last item in Sum (to make the total flux=1) " +
             "resulted in negative flux = -0.200000 for that item") in cl.output
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad4')
+
 
 @timer
 def test_convolve():
@@ -1179,6 +1326,21 @@ def test_convolve():
                 { 'type' : 'Gaussian' , 'sigma' : 2 },
             ]
         },
+        'bad1' : {
+            'type' : 'Convolve' ,
+            'items' : { 'type' : 'Gaussian', 'sigma' : 2, 'flux' : 0.3 },
+        },
+        'bad2' : {
+            'type' : 'Convolve' ,
+            'items' :  [],
+        },
+        'bad3' : {
+            'type' : 'Convolve' ,
+            'items' :  'invalid',
+        },
+        'bad4' : {
+            'type' : 'Convolve' ,
+        },
     }
 
     gal1a = galsim.config.BuildGSObject(config, 'gal1')[0]
@@ -1229,6 +1391,15 @@ def test_convolve():
     gal6a = galsim.config.BuildGSObject(config, 'gal6')[0]
     gal6b = galsim.Gaussian(sigma = 2)
     gsobject_compare(gal6a, gal6b)
+
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad4')
 
 
 @timer
@@ -1302,6 +1473,38 @@ def test_list():
     with assert_raises(AssertionError):
         gsobject_compare(gal5a, gal5c, conv=galsim.Gaussian(sigma=1))
 
+    config = {
+        'bad1' : { 'type' : 'List',
+                   'items' : { 'type' : 'Exponential' , 'scale_radius' : 3.4, 'flux' : 100 } },
+        'bad2' : { 'type' : 'List', 'items' : [], },
+        'bad3' : { 'type' : 'List', 'items' : 'invalid', },
+        'bad4' : { 'type' : 'List', },
+        'bad5' : {
+            'type' : 'List' ,
+            'items' : [ { 'type' : 'Gaussian' , 'sigma' : 2 },
+                        { 'type' : 'Gaussian' , 'fwhm' : 2, 'flux' : 100 }, ],
+            'index' : -1,
+        },
+        'bad6' : {
+            'type' : 'List' ,
+            'items' : [ { 'type' : 'Gaussian' , 'sigma' : 2 },
+                        { 'type' : 'Gaussian' , 'fwhm' : 2, 'flux' : 100 }, ],
+            'index' : 2,
+        },
+    }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad1')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad2')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad3')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad4')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad5')
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildGSObject(config, 'bad6')
+
 
 @timer
 def test_repeat():
@@ -1339,9 +1542,13 @@ def test_repeat():
     config['obj_num'] = 4
     gal2a = galsim.config.BuildGSObject(config, 'gal')[0]
     gsobject_compare(gal2a, gal2b)
+
+    # Also check that the logger reports why it is using the current object
     config['obj_num'] = 5
-    gal2a = galsim.config.BuildGSObject(config, 'gal')[0]
+    with CaptureLog() as cl:
+        gal2a = galsim.config.BuildGSObject(config, 'gal', logger=cl.logger)[0]
     gsobject_compare(gal2a, gal2b)
+    assert "repeat = 3, index = 5, use current object" in cl.output
 
 
 @timer
@@ -1349,15 +1556,13 @@ def test_usertype():
     """Test a user-defined type
     """
     # A custom GSObject class that will use BuildSimple
-    class PseudoDelta(galsim.GSObject):
+    class PseudoDelta(galsim.Gaussian):
         _req_params = {}
         _opt_params = { "flux" : float }
         _single_params = []
         _takes_rng = False
         def __init__(self, flux=1., gsparams=None):
-            obj = galsim.Gaussian(sigma=1.e-8, flux=flux, gsparams=gsparams)
-            self._sbp = obj._sbp
-            self._gsparams = gsparams
+            super(PseudoDelta, self).__init__(sigma=1.e-8, flux=flux, gsparams=gsparams)
 
     galsim.config.RegisterObjectType('PseudoDelta', PseudoDelta)
 

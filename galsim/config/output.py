@@ -20,6 +20,8 @@ import os
 import galsim
 import logging
 
+from ..utilities import ensure_dir
+
 # This file handles building the output files according to the specifications in config['output'].
 # This file includes the basic functionality, but it calls out to helper functions for the
 # different types of output files.  It includes the implementation of the default output type,
@@ -116,8 +118,9 @@ def BuildFiles(nfiles, config, file_num=0, logger=None, except_abort=False):
     def done_func(logger, proc, k, result, t2):
         file_num, file_name = info[k]
         file_name2, t = result  # This is the t for which 0 means the file was skipped.
-        if file_name2 != file_name:
-            raise RuntimeError("Files seem to be out of sync. %s != %s",file_name, file_name2)
+        if file_name2 != file_name:  # pragma: no cover  (I think this should never happen.)
+            raise galsim.GalSimError("Files seem to be out of sync. %s != %s",
+                                     file_name, file_name2)
         if t != 0 and logger:
             if proc is None: s0 = ''
             else: s0 = '%s: '%proc
@@ -208,7 +211,7 @@ def BuildFile(config, file_num=0, image_num=0, obj_num=0, logger=None):
     if ('noclobber' in output
         and galsim.config.ParseValue(output, 'noclobber', config, bool)[0]
         and os.path.isfile(file_name)):
-        logger.warning('Skipping file %d = %s because output.noclobber = True' +
+        logger.warning('Skipping file %d = %s because output.noclobber = True'
                        ' and file exists',file_num,file_name)
         return file_name, 0
 
@@ -260,7 +263,8 @@ def GetNFiles(config):
     output = config.get('output',{})
     output_type = output.get('type','Fits')
     if output_type not in valid_output_types:
-        raise AttributeError("Invalid output.type=%s."%output_type)
+        raise galsim.GalSimConfigValueError("Invalid output.type.", output_type,
+                                            valid_output_types)
     return valid_output_types[output_type].getNFiles(output, config)
 
 
@@ -277,7 +281,8 @@ def GetNImagesForFile(config, file_num):
     output = config.get('output',{})
     output_type = output.get('type','Fits')
     if output_type not in valid_output_types:
-        raise AttributeError("Invalid output.type=%s."%output_type)
+        raise galsim.GalSimConfigValueError("Invalid output.type.", output_type,
+                                            valid_output_types)
     return valid_output_types[output_type].getNImages(output, config, file_num)
 
 
@@ -295,7 +300,8 @@ def GetNObjForFile(config, file_num, image_num):
     output = config.get('output',{})
     output_type = output.get('type','Fits')
     if output_type not in valid_output_types:
-        raise AttributeError("Invalid output.type=%s."%output_type)
+        raise galsim.GalSimConfigValueError("Invalid output.type.", output_type,
+                                            valid_output_types)
     return valid_output_types[output_type].getNObjPerImage(output, config, file_num, image_num)
 
 
@@ -336,7 +342,8 @@ def SetupConfigFileNum(config, file_num, image_num, obj_num, logger=None):
     # Check that the type is valid
     output_type = config['output']['type']
     if output_type not in valid_output_types:
-        raise AttributeError("Invalid output.type=%s."%output_type)
+        raise galsim.GalSimConfigValueError("Invalid output.type.", output_type,
+                                            valid_output_types)
 
 
 def SetDefaultExt(config, default_ext):
@@ -359,12 +366,12 @@ def RetryIO(func, args, ntries, file_name, logger):
         itry += 1
         try:
             ret = func(*args)
-        except IOError as e:
+        except (IOError, OSError) as e:
             if itry == ntries:
                 # Then this was the last try.  Just re-raise the exception.
                 raise
             else:
-                logger.warning('File %s: Caught IOError: %s',file_name,str(e))
+                logger.warning('File %s: Caught OSError: %s',file_name,str(e))
                 logger.warning('This is try %d/%d, so sleep for %d sec and try again.',
                                itry,ntries,itry)
                 import time
@@ -373,35 +380,6 @@ def RetryIO(func, args, ntries, file_name, logger):
         else:
             break
     return ret
-
-
-def EnsureDir(target):
-    """
-    Make sure the directory for the target location exists, watching for a race condition
-
-    In particular check if the OS reported that the directory already exists when running
-    makedirs, which can happen if another process creates it before this one can
-    """
-
-    _ERR_FILE_EXISTS=17
-    dir = os.path.dirname(target)
-    if dir == '': return
-
-    exists = os.path.exists(dir)
-    if not exists:
-        try:
-            os.makedirs(dir)
-        except OSError as err:
-            # check if the file now exists, which can happen if some other
-            # process created the directory between the os.path.exists call
-            # above and the time of the makedirs attempt.  This is OK
-            if err.errno != _ERR_FILE_EXISTS:
-                raise err
-
-    elif exists and not os.path.isdir(dir):
-        raise IOError("tried to make directory '%s' "
-                      "but a non-directory file of that "
-                      "name already exists" % dir)
 
 
 class OutputBuilder(object):
@@ -447,14 +425,15 @@ class OutputBuilder(object):
             # If a file_name isn't specified, we use the name of the config file + '.fits'
             file_name = base['root'] + self.default_ext
         else:
-            raise AttributeError("No file_name specified and unable to generate it automatically.")
+            raise galsim.GalSimConfigError(
+                "No file_name specified and unable to generate it automatically.")
 
         # Prepend a dir to the beginning of the filename if requested.
         if 'dir' in config:
             dir = galsim.config.ParseValue(config, 'dir', base, str)[0]
             file_name = os.path.join(dir,file_name)
 
-        EnsureDir(file_name)
+        ensure_dir(file_name)
 
         return file_name
 

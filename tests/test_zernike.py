@@ -21,14 +21,8 @@ import numpy as np
 import os
 import sys
 
+import galsim
 from galsim_test_helpers import *
-
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 
 @timer
@@ -99,6 +93,10 @@ def test_Zernike_orthonormality():
                         err_msg="Orthonormality failed for (j1,j2) = ({0},{1})".format(j1, j2))
     do_pickle(Z1)
     do_pickle(Z1, lambda z: tuple(z.evalCartesian(x, y)))
+
+    with assert_raises(ValueError):
+        Z1 = galsim.zernike.Zernike([0]*4 + [0.1]*7, R_outer=R_inner, R_inner=R_outer)
+        val1 = Z1.evalCartesian(x, y)
 
 
 @timer

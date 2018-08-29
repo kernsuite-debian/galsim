@@ -16,12 +16,7 @@
 #    and/or other materials provided with the distribution.
 #
 
-# Note: By default python2.7 ignores DeprecationWarnings.  Apparently they are really
-#       for python system deprecations.  I think GalSim deprecations are more appropriately
-#       considered UserWarnings, which are not ignored by default.
-class GalSimDeprecationWarning(UserWarning):
-    def __init__(self, s):
-        super(GalSimDeprecationWarning, self).__init__(self, s)
+from ..errors import GalSimDeprecationWarning
 
 def depr(f, v, s1, s2=None):
     """A helper function for emitting a GalSimDeprecationWarning.
@@ -35,13 +30,13 @@ def depr(f, v, s1, s2=None):
     2. You can add extra information if you want to point out something about the new syntax:
 
             depr('draw', 1.1, "drawImage(..., method='no_pixel')",
-                 'Note: drawImage has different args than draw did.  ' +
+                 'Note: drawImage has different args than draw did.  '
                  'Read the docs for the method keywords carefully.')
 
     3. If the deprecated function has no replacement, you can use '' for the first string.
 
             depr('calculateCovarianceMatrix', 1.3, '',
-                 'This functionality has been removed. If you have a need for it, please open '+
+                 'This functionality has been removed. If you have a need for it, please open '
                  'an issue requesting the functionality.')
     """
     import warnings
@@ -51,20 +46,3 @@ def depr(f, v, s1, s2=None):
     if s2:
         s += '  ' + s2
     warnings.warn(s, GalSimDeprecationWarning)
-
-from . import angle
-from . import bandpass
-from . import base
-from . import bounds
-from . import chromatic
-from . import correlatednoise
-from . import gsobject_ring
-from . import image
-from . import interpolatedimage
-from . import noise
-from . import optics
-from . import random
-from . import sed
-from . import shapelet
-from . import shear
-from . import photon_array

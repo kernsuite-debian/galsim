@@ -21,35 +21,14 @@ import numpy as np
 import os
 import sys
 
+import galsim
 from galsim_test_helpers import *
 
 imgdir = os.path.join(".", "SBProfile_comparison_images") # Directory containing the reference
                                                           # images.
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
-
 # for flux normalization tests
 test_flux = 1.8
-
-# These are the default GSParams used when unspecified.  We'll check that specifying
-# these explicitly produces the same results.
-default_params = galsim.GSParams(
-        minimum_fft_size = 128,
-        maximum_fft_size = 4096,
-        folding_threshold = 5.e-3,
-        maxk_threshold = 1.e-3,
-        kvalue_accuracy = 1.e-5,
-        xvalue_accuracy = 1.e-5,
-        shoot_accuracy = 1.e-5,
-        realspace_relerr = 1.e-4,
-        realspace_abserr = 1.e-6,
-        integration_relerr = 1.e-6,
-        integration_abserr = 1.e-8)
 
 # Some parameters used in the two unit tests test_integer_shift_fft and test_integer_shift_photon:
 test_sigma = 1.8
@@ -113,6 +92,12 @@ def test_smallshear():
     # Check really small shear  (This mostly tests a branch in the str function.)
     do_pickle(galsim.Gaussian(sigma=2.3).shear(g1=1.e-13,g2=0))
 
+    assert_raises(TypeError, gauss.shear)
+    assert_raises(TypeError, gauss.shear, 0.3)
+    assert_raises(TypeError, gauss.shear, 0.1, 0.3)
+    assert_raises(TypeError, gauss.shear, g1=0.1, g2=0.1, invalid=0.3)
+    assert_raises(TypeError, gauss.shear, myShear, invalid=0.3)
+
 @timer
 def test_largeshear():
     """Test the application of a large shear to a Sersic profile against a known result.
@@ -167,7 +152,6 @@ def test_largeshear():
     # Check picklability
     do_pickle(gauss, lambda x: x.drawImage())
     do_pickle(gauss)
-    do_pickle(gauss._sbp)
 
 
 @timer
@@ -218,8 +202,9 @@ def test_rotate():
     # Check picklability
     do_pickle(gal, lambda x: x.drawImage())
     do_pickle(gal)
-    do_pickle(gal._sbp)
 
+    assert_raises(TypeError, gal.rotate)
+    assert_raises(TypeError, gal.rotate, 34)
 
 @timer
 def test_mag():
@@ -299,7 +284,6 @@ def test_mag():
     # Check picklability
     do_pickle(gal, lambda x: x.drawImage())
     do_pickle(gal)
-    do_pickle(gal._sbp)
 
 
 @timer
@@ -372,7 +356,6 @@ def test_shift():
     # Check picklability
     do_pickle(gauss, lambda x: x.drawImage())
     do_pickle(gauss)
-    do_pickle(gauss._sbp)
 
 
 @timer
@@ -518,7 +501,6 @@ def test_rescale():
     # Check picklability
     do_pickle(sersic2, lambda x: x.drawImage())
     do_pickle(sersic2)
-    do_pickle(sersic2._sbp)
 
 
 @timer
@@ -651,8 +633,7 @@ def test_flip():
                        gsparams=galsim.GSParams(realspace_relerr=1.e-6)),
             # Without being convolved by anything with a reasonable k cutoff, this needs
             # a very large fft.
-            galsim.DeVaucouleurs(half_light_radius=0.17, flux=1.7,
-                                 gsparams=galsim.GSParams(maximum_fft_size=8000)),
+            galsim.DeVaucouleurs(half_light_radius=0.17, flux=1.7),
             # I don't really understand why this needs a lower maxk_threshold to work, but
             # without it, the k-space tests fail.
             galsim.Exponential(scale_radius=0.17, flux=1.7,
@@ -893,13 +874,23 @@ def test_ne():
     objs = [galsim.Transform(gal1),
             galsim.Transform(gal2),
             galsim.Transform(gal1, jac=(1, 0.5, 0.5, 1)),
+            galsim.Transform(gal1, jac=(1, 1, 1, 1)),
             galsim.Transform(gal1, jac=jac),
             galsim.Transform(gal1, offset=galsim.PositionD(2, 2)),
             galsim.Transform(gal1, offset=offset),
             galsim.Transform(gal1, flux_ratio=1.1),
             galsim.Transform(gal1, flux_ratio=flux_ratio),
-            galsim.Transform(gal1, gsparams=gsp)]
+            galsim.Transform(gal1, gsparams=gsp),
+            galsim.Transform(gal1, gsparams=gsp, propagate_gsparams=False)]
     all_obj_diff(objs)
+
+    # The degenerate jacobian will build fine, but will raise an exception when used.
+    degen = galsim.Transform(gal1, jac=(1, 1, 1, 1))
+    with assert_raises(galsim.GalSimError):
+        sbp = degen._sbp
+
+    assert_raises(TypeError, galsim.Transform, jac)
+
 
 @timer
 def test_compound():
@@ -907,15 +898,15 @@ def test_compound():
     automatically or not.
     """
     gal1 = galsim.Gaussian(fwhm=1.7, flux=2.3)
-    gal2 = gal1.shear(g1=0.21, g2=0.12).rotate(33 * galsim.degrees).shift(0.1,0.4) * 11.
-    gal3 = gal2.shear(g1=0.18, g2=0.09).rotate(12 * galsim.degrees).shift(-0.3,0.5) * 89.
+    gal2 = gal1.shear(g1=0.21, g2=0.12).rotate(33 * galsim.degrees).shift(0.1,0.4) * 1.1
+    gal3 = gal2.shear(g1=0.18, g2=0.09).rotate(12 * galsim.degrees).shift(-0.3,0.5) * 8.9
     # These should have compounded automatically into a single transformation
     print('gal3 = ',gal3)
     print('gal3.original = ',gal3.original)
     assert gal3.original == gal1
 
     gal4 = gal2 + 0. * gal1  # Equivalent to gal2, but the sum kills the automatic compounding.
-    gal5 = gal4.shear(g1=0.18, g2=0.09).rotate(12 * galsim.degrees).shift(-0.3,0.5) * 89.
+    gal5 = gal4.shear(g1=0.18, g2=0.09).rotate(12 * galsim.degrees).shift(-0.3,0.5) * 8.9
     print('gal5 = ',gal5)
     print('gal5.original = ',gal5.original)
     assert gal5.original != gal1
@@ -970,6 +961,43 @@ def test_compound():
     np.testing.assert_array_almost_equal(im3_cf.array, im3_cd.array, decimal=3)
     np.testing.assert_array_almost_equal(im5_cf.array, im5_cd.array, decimal=3)
 
+@timer
+def test_gsparams():
+    """Test withGSParams with some non-default gsparams
+    """
+    obj = galsim.Exponential(half_light_radius=1.7)
+    gsp = galsim.GSParams(folding_threshold=1.e-4, maxk_threshold=1.e-4, maximum_fft_size=1.e4)
+    gsp2 = galsim.GSParams(folding_threshold=1.e-2, maxk_threshold=1.e-2)
+
+    tr = obj.shear(g1=0.2, g2=0.3)
+    jac = galsim.Shear(g1=0.2, g2=0.3).getMatrix()
+    tr1 = tr.withGSParams(gsp)
+    assert tr.gsparams == galsim.GSParams()
+    assert tr1.gsparams == gsp
+    assert tr1.original.gsparams == gsp
+
+    tr2 = galsim.Transformation(obj.withGSParams(gsp), jac=jac)
+    tr3 = galsim.Transformation(galsim.Exponential(half_light_radius=1.7, gsparams=gsp), jac=jac)
+    tr4 = galsim.Transform(obj, jac=jac, gsparams=gsp)
+    assert tr != tr1
+    assert tr1 == tr2
+    assert tr1 == tr3
+    assert tr1 == tr4
+    print('stepk = ',tr.stepk, tr1.stepk)
+    assert tr1.stepk < tr.stepk
+    print('maxk = ',tr.maxk, tr1.maxk)
+    assert tr1.maxk > tr.maxk
+
+    tr5 = galsim.Transform(obj, jac=jac, gsparams=gsp, propagate_gsparams=False)
+    assert tr5 != tr4
+    assert tr5.gsparams == gsp
+    assert tr5.original.gsparams == galsim.GSParams()
+
+    tr6 = tr5.withGSParams(gsp2)
+    assert tr6 != tr5
+    assert tr6.gsparams == gsp2
+    assert tr6.original.gsparams == galsim.GSParams()
+
 
 if __name__ == "__main__":
     test_smallshear()
@@ -984,3 +1012,4 @@ if __name__ == "__main__":
     test_flip()
     test_ne()
     test_compound()
+    test_gsparams()

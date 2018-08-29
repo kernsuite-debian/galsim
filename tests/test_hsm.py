@@ -30,14 +30,9 @@ import sys
 import numpy as np
 import math
 
+import galsim
 from galsim_test_helpers import *
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 # define a range of input parameters for the Gaussians that we are testing
 gaussian_sig_values = [0.5, 1.0, 2.0]
@@ -162,7 +157,7 @@ def test_moments_basic():
                                                decimal = decimal_shape)
 
                 # if this is the first time through this loop, just make sure it runs and gives the
-                # same result for ImageView and ConstImageViews:
+                # same result whether const or not.
                 if first_test:
                     result = gal_image.view().FindAdaptiveMom()
                     first_test=False
@@ -180,14 +175,14 @@ def test_moments_basic():
                     result = gal_image.view(make_const=True).FindAdaptiveMom()
                     np.testing.assert_almost_equal(
                         np.fabs(result.moments_sigma-sig/pixel_scale), 0.0,
-                        err_msg = "- incorrect dsigma (ConstImageView)", decimal = decimal)
+                        err_msg = "- incorrect dsigma (make_const=True)", decimal = decimal)
                     np.testing.assert_almost_equal(
                         result.observed_shape.e1,
-                        distortion_1, err_msg = "- incorrect e1 (ConstImageView)",
+                        distortion_1, err_msg = "- incorrect e1 (make_const=True)",
                         decimal = decimal_shape)
                     np.testing.assert_almost_equal(
                         result.observed_shape.e2,
-                        distortion_2, err_msg = "- incorrect e2 (ConstImageView)",
+                        distortion_2, err_msg = "- incorrect e2 (make_const=True)",
                         decimal = decimal_shape)
 
 
@@ -319,11 +314,11 @@ def test_masks():
     assert_raises(ValueError, galsim.hsm.EstimateShear, im, p_im, weight_im)
     ## excludes all pixels
     weight_im = galsim.ImageI(imsize, imsize)
-    assert_raises(RuntimeError, galsim.hsm.FindAdaptiveMom, im, weight_im)
-    assert_raises(RuntimeError, galsim.hsm.EstimateShear, im, p_im, weight_im)
+    assert_raises(galsim.GalSimError, galsim.hsm.FindAdaptiveMom, im, weight_im)
+    assert_raises(galsim.GalSimError, galsim.hsm.EstimateShear, im, p_im, weight_im)
     badpix_im = galsim.ImageI(imsize, imsize, init_value = -1)
-    assert_raises(RuntimeError, galsim.hsm.FindAdaptiveMom, im, good_weight_im, badpix_im)
-    assert_raises(RuntimeError, galsim.hsm.EstimateShear, im, p_im, good_weight_im, badpix_im)
+    assert_raises(galsim.GalSimError, galsim.hsm.FindAdaptiveMom, im, good_weight_im, badpix_im)
+    assert_raises(galsim.GalSimError, galsim.hsm.EstimateShear, im, p_im, good_weight_im, badpix_im)
 
     # check moments, shear without mask
     resm = im.FindAdaptiveMom()
@@ -566,15 +561,17 @@ def test_hsmparams():
                                    failed_moments=99.))
     do_pickle(res)
     do_pickle(res2)
-    do_pickle(galsim._galsim.CppShapeData())
 
     # Then check failure modes: force it to fail by changing HSMParams.
     new_params_niter = galsim.hsm.HSMParams(max_mom2_iter = res.moments_n_iter-1)
     new_params_size = galsim.hsm.HSMParams(max_amoment = 0.3*res.moments_sigma**2)
-    assert_raises(RuntimeError, galsim.hsm.FindAdaptiveMom, tot_gal_image,
+    assert_raises(galsim.GalSimError, galsim.hsm.FindAdaptiveMom, tot_gal_image,
                   hsmparams=new_params_niter)
-    assert_raises(RuntimeError, galsim.hsm.EstimateShear, tot_gal_image, tot_psf_image,
+    assert_raises(galsim.GalSimError, galsim.hsm.EstimateShear, tot_gal_image, tot_psf_image,
                   hsmparams=new_params_size)
+
+    assert_raises(TypeError, galsim.hsm.EstimateShear, tot_gal_image, tot_psf_image,
+                  hsmparams='hsmparams')
 
 
 @timer
@@ -634,10 +631,10 @@ def test_hsmparams_nodefault():
     assert(res.moments_amp > res2.moments_amp),'Amplitudes do not change as expected'
 
     # Check that max_amoment, max_ashift work as expected
-    assert_raises(RuntimeError,
+    assert_raises(galsim.GalSimError,
         galsim.hsm.EstimateShear, tot_gal_image, tot_psf_image,
         hsmparams=galsim.hsm.HSMParams(max_amoment = 10.))
-    assert_raises(RuntimeError,
+    assert_raises(galsim.GalSimError,
         galsim.hsm.EstimateShear, tot_gal_image, tot_psf_image,
         guess_centroid=galsim.PositionD(47., tot_gal_image.true_center.y),
         hsmparams=galsim.hsm.HSMParams(max_ashift=0.1))
@@ -674,11 +671,11 @@ def test_strict():
 
     # Check that measuring moments with strict = True results in the expected exception, and that
     # it is the same one as is stored when running with strict = False.
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimError):
         galsim.hsm.FindAdaptiveMom(im)
     try:
         res2 = im.FindAdaptiveMom()
-    except RuntimeError as err:
+    except galsim.GalSimError as err:
         if str(err) != res.error_message:
             raise AssertionError("Error messages do not match when running identical tests!")
 
@@ -686,11 +683,11 @@ def test_strict():
     res = galsim.hsm.EstimateShear(im, im, strict = False)
     if res.error_message == '':
         raise AssertionError("Should have error message stored in case of EstimateShear failure!")
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimError):
         galsim.hsm.EstimateShear(im, im)
     try:
         res2 = galsim.hsm.EstimateShear(im, im)
-    except RuntimeError as err:
+    except galsim.GalSimError as err:
         if str(err) != res.error_message:
             raise AssertionError("Error messages do not match when running identical tests!")
 
@@ -740,7 +737,7 @@ def test_bounds_centroid():
 
     # Check that we can take a weird/asymmetric sub-image, and it fails because of centroid shift.
     sub_im = im[galsim.BoundsI(b2.xmin, b2.xmax-100, b2.ymin+27, b2.ymax)]
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimError):
         galsim.hsm.FindAdaptiveMom(sub_im)
 
     # ... and that it passes if we hand in a good centroid guess.  Note that this test is a bit less

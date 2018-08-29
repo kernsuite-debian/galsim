@@ -109,7 +109,8 @@ class PowerSpectrumLoader(InputLoader):
             scale = base['wcs'].maxLinearScale(base['image_center'])
             grid_spacing = grid_size * scale
         else:
-            raise AttributeError("power_spectrum.grid_spacing required for non-tiled images")
+            raise galsim.GalSimConfigError(
+                "power_spectrum.grid_spacing required for non-tiled images")
 
         if 'ngrid' in config:
             ngrid = galsim.config.ParseValue(config, 'ngrid', base, float)[0]
@@ -155,7 +156,7 @@ class PowerSpectrumLoader(InputLoader):
 
         # We don't care about the output here.  This just builds the grid, which we'll
         # access for each object using its position.
-        logger.debug('image %d: PowerSpectrum buildGrid(grid_spacing=%s, ngrid=%s, center=%s, ' +
+        logger.debug('image %d: PowerSpectrum buildGrid(grid_spacing=%s, ngrid=%s, center=%s, '
                      'interpolant=%s, variance=%s)',
                      base.get('image_num',0), grid_spacing, ngrid, center, interpolant, variance)
         input_obj.buildGrid(grid_spacing=grid_spacing, ngrid=ngrid, center=center,
@@ -183,7 +184,7 @@ def _GenerateFromPowerSpectrumShear(config, base, value_type):
     logger = power_spectrum.logger
 
     if 'world_pos' not in base:
-        raise ValueError("PowerSpectrumShear requested, but no position defined.")
+        raise galsim.GalSimConfigError("PowerSpectrumShear requested, but no position defined.")
     pos = base['world_pos']
 
     # There aren't any parameters for this, so just make sure num is the only (optional)
@@ -223,7 +224,8 @@ def _GenerateFromPowerSpectrumMagnification(config, base, value_type):
     logger = power_spectrum.logger
 
     if 'world_pos' not in base:
-        raise ValueError("PowerSpectrumMagnification requested, but no position defined.")
+        raise galsim.GalSimConfigError(
+            "PowerSpectrumMagnification requested, but no position defined.")
     pos = base['world_pos']
 
     opt = { 'max_mu' : float, 'num' : int }
@@ -240,8 +242,8 @@ def _GenerateFromPowerSpectrumMagnification(config, base, value_type):
 
     max_mu = kwargs.get('max_mu', 25.)
     if not max_mu > 0.:
-        raise ValueError(
-            "Invalid max_mu=%f (must be > 0) for type = PowerSpectrumMagnification"%max_mu)
+        raise galsim.GalSimConfigValueError(
+            "Invalid max_mu for type = PowerSpectrumMagnification (must be > 0)", max_mu)
 
     if mu < 0 or mu > max_mu:
         logger.warning('obj %d: Warning: PowerSpectrum mu = %f means strong lensing. '%(

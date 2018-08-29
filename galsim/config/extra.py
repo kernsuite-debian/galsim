@@ -17,7 +17,6 @@
 #
 
 import os
-import galsim
 import logging
 import inspect
 
@@ -30,6 +29,8 @@ import inspect
 # The keys will be the (string) names of the extra output types, and the values will be
 # builder classes that will perform the different processing functions.
 valid_extra_outputs = {}
+
+import galsim
 
 
 def SetupExtraOutput(config, logger=None):
@@ -93,7 +94,7 @@ def SetupExtraOutput(config, logger=None):
 
         # Make the data list the right length now to avoid issues with multiple
         # processes trying to append at the same time.
-        nimages = config['nimages']
+        nimages = config.get('nimages', 1)
         for k in range(nimages):
             data.append(None)
 
@@ -114,7 +115,9 @@ def SetupExtraOutputsForImage(config, logger=None):
     @param logger       If given, a logger object to log progress. [default: None]
     """
     if 'output' in config:
-        for key in [ k for k in valid_extra_outputs.keys() if k in config['output'] ]:
+        if 'extra_builder' not in config:
+            SetupExtraOutput(config, logger)
+        for key in (k for k in valid_extra_outputs.keys() if k in config['output']):
             builder = config['extra_builder'][key]
             field = config['output'][key]
             builder.setupImage(field, config, logger)
@@ -132,7 +135,7 @@ def ProcessExtraOutputsForStamp(config, skip, logger=None):
     """
     if 'output' in config:
         obj_num = config['obj_num']
-        for key in [ k for k in valid_extra_outputs.keys() if k in config['output'] ]:
+        for key in (k for k in valid_extra_outputs.keys() if k in config['output']):
             builder = config['extra_builder'][key]
             field = config['output'][key]
             if skip:
@@ -151,14 +154,14 @@ def ProcessExtraOutputsForImage(config, logger=None):
     """
     if 'output' in config:
         obj_nums = None
-        for key in [ k for k in valid_extra_outputs.keys() if k in config['output'] ]:
+        for key in (k for k in valid_extra_outputs.keys() if k in config['output']):
+            image_num = config.get('image_num',0)
+            start_image_num = config.get('start_image_num',0)
             if obj_nums is None:
                 # Figure out which obj_nums were used for this image.
-                file_num = config['file_num']
-                image_num = config['image_num']
-                start_image_num = config['start_image_num']
-                start_obj_num = config['start_obj_num']
-                nobj = config['nobj']
+                file_num = config.get('file_num',0)
+                start_obj_num = config.get('start_obj_num',0)
+                nobj = config.get('nobj', [1])
                 k = image_num - start_image_num
                 for i in range(k):
                     start_obj_num += nobj[i]
@@ -168,7 +171,7 @@ def ProcessExtraOutputsForImage(config, logger=None):
                 obj_nums = [ n for n in obj_nums if n not in skipped ]
             builder = config['extra_builder'][key]
             field = config['output'][key]
-            index = config['image_num'] - config['start_image_num']
+            index = image_num - start_image_num
             builder.processImage(index, obj_nums, field, config, logger)
 
 
@@ -203,12 +206,12 @@ def WriteExtraOutputs(config, main_data, logger=None):
     if 'extra_last_file' not in config:
         config['extra_last_file'] = {}
 
-    for key in [ k for k in valid_extra_outputs.keys() if k in output ]:
+    for key in (k for k in valid_extra_outputs.keys() if k in output):
         field = output[key]
         if 'file_name' in field:
             galsim.config.SetDefaultExt(field, '.fits')
             file_name = galsim.config.ParseValue(field,'file_name',config,str)[0]
-        else: # pragma: no cover
+        else:  # pragma: no cover  (it is covered, but codecov wrongly thinks it isn't.)
             # If no file_name, then probably writing to hdu
             continue
         if 'dir' in field:
@@ -219,11 +222,11 @@ def WriteExtraOutputs(config, main_data, logger=None):
         if dir is not None:
             file_name = os.path.join(dir,file_name)
 
-        galsim.config.EnsureDir(file_name)
+        galsim.config.ensure_dir(file_name)
 
-        if noclobber and os.path.isfile(file_name):  # pragma: no cover
-            logger.warning('Not writing %s file %d = %s because output.noclobber = True' +
-                           ' and file exists',key,config['file_num'],file_name)
+        if noclobber and os.path.isfile(file_name):
+            logger.warning('Not writing %s file %d = %s because output.noclobber = True '
+                           'and file exists',key,config['file_num'],file_name)
             continue
 
         if config['extra_last_file'].get(key, None) == file_name:
@@ -264,15 +267,15 @@ def AddExtraOutputHDUs(config, main_data, logger=None):
     """
     output = config['output']
     hdus = {}
-    for key in [ k for k in valid_extra_outputs.keys() if k in output ]:
+    for key in (k for k in valid_extra_outputs.keys() if k in output):
         field = output[key]
         if 'hdu' in field:
             hdu = galsim.config.ParseValue(field,'hdu',config,int)[0]
-        else: # pragma: no cover
+        else:  # pragma: no cover  (it is covered, but codecov wrongly thinks it isn't.)
             # If no hdu, then probably writing to file
             continue
         if hdu <= 0 or hdu in hdus:
-            raise ValueError("%s hdu = %d is invalid or a duplicate."%hdu)
+            raise galsim.GalSimConfigValueError("hdu is invalid or a duplicate.",hdu)
 
         builder = config['extra_builder'][key]
 
@@ -285,7 +288,7 @@ def AddExtraOutputHDUs(config, main_data, logger=None):
     first = len(main_data)
     for h in range(first,len(hdus)+first):
         if h not in hdus:
-            raise ValueError("Cannot skip hdus.  No output found for hdu %d"%h)
+            raise galsim.GalSimConfigError("Cannot skip hdus.  No output found for hdu %d"%h)
     # Turn hdus into a list (in order)
     hdulist = [ hdus[k] for k in range(first,len(hdus)+first) ]
     return main_data + hdulist
@@ -297,20 +300,21 @@ def CheckNoExtraOutputHDUs(config, output_type, logger=None):
     """
     logger = galsim.config.LoggerWrapper(logger)
     output = config['output']
-    for key in [ k for k in valid_extra_outputs.keys() if k in output ]:
+    for key in (k for k in valid_extra_outputs.keys() if k in output):
         field = output[key]
         if 'hdu' in field:
             hdu = galsim.config.ParseValue(field,'hdu',config,int)[0]
             logger.error("Extra output %s requesting to write to hdu %d", key, hdu)
-            raise AttributeError("Output type %s cannot add extra images as HDUs"%output_type)
+            raise galsim.GalSimConfigError(
+                "Output type %s cannot add extra images as HDUs"%output_type)
 
 
-def GetFinalExtraOutput(key, config, main_data, logger=None):
+def GetFinalExtraOutput(key, config, main_data=[], logger=None):
     """Get the finalized output object for the given extra output key
 
     @param key          The name of the output field in config['output']
     @param config       The configuration dict.
-    @param main_data    The main file data in case it is needed.
+    @param main_data    The main file data in case it is needed.  [default: []]
     @param logger       If given, a logger object to log progress. [default: None]
 
     @returns the final data to be output.
@@ -431,7 +435,7 @@ class ExtraOutputBuilder(object):
 
         @returns the final version of the object.
         """
-        if self.final_data is None: # pragma: no branch
+        if self.final_data is None:
             self.final_data = self.finalize(config, base, main_data, logger)
         return self.final_data
 
@@ -478,12 +482,9 @@ class ExtraOutputBuilder(object):
 
         @returns an HDU with the output data.
         """
-        n = len(self.data)
-        if n == 0:
-            raise RuntimeError("No %s images were created."%self._extra_output_key)
-        elif n > 1:
-            raise RuntimeError(
-                    "%d %s images were created, but expecting only 1."%(n,self._extra_output_key))
+        if len(self.data) != 1:  # pragma: no cover  (Not sure if this is possible.)
+            raise galsim.GalSimError(
+                    "%d %s images were created. Expecting 1."%(n,self._extra_output_key))
         return self.data[0]
 
 

@@ -21,14 +21,9 @@ import numpy as np
 import os
 import sys
 
+import galsim
 from galsim_test_helpers import *
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 # for flux normalization tests
 test_flux = 1.8
@@ -296,13 +291,6 @@ def test_drawImage():
     np.testing.assert_almost_equal(
         mom['My'], (ny+1.+1.)/2., 4, "obj.drawImage(nx,ny) (odd) did not center in y correctly")
 
-    # Test if we provide nx, ny, scale, and an existing image.  It should:
-    #   - raise a ValueError
-    im10 = galsim.ImageF()
-    kwargs = {'nx':nx, 'ny':ny, 'scale':scale, 'image':im10}
-    with assert_raises(ValueError):
-        obj.drawImage(**kwargs)
-
     # Test if we provide bounds and scale.  It should:
     #   - create a new image with the right size
     #   - set the scale
@@ -337,12 +325,39 @@ def test_drawImage():
     np.testing.assert_almost_equal(mom['My'], (ny+1.+1.)/2., 4,
                                    "obj.drawImage(bounds) did not center in y correctly")
 
-    # Test if we provide bounds, scale, and an existing image.  It should:
-    #   - raise a ValueError
-    bounds = galsim.BoundsI(1,nx,1,ny)
-    kwargs = {'bounds':bounds, 'scale':scale, 'image':im10}
-    with assert_raises(ValueError):
-        obj.drawImage(**kwargs)
+    # Combinations that raise errors:
+    assert_raises(TypeError, obj.drawImage, image=im10, bounds=bounds)
+    assert_raises(TypeError, obj.drawImage, image=im10, dtype=int)
+    assert_raises(TypeError, obj.drawImage, nx=3, ny=4, image=im10, scale=scale)
+    assert_raises(TypeError, obj.drawImage, nx=3, ny=4, image=im10)
+    assert_raises(TypeError, obj.drawImage, nx=3, ny=4, bounds=bounds)
+    assert_raises(TypeError, obj.drawImage, nx=3, ny=4, add_to_image=True)
+    assert_raises(TypeError, obj.drawImage, bounds=bounds, add_to_image=True)
+    assert_raises(TypeError, obj.drawImage, image=galsim.Image(), add_to_image=True)
+    assert_raises(TypeError, obj.drawImage, nx=3)
+    assert_raises(TypeError, obj.drawImage, ny=3)
+    assert_raises(TypeError, obj.drawImage, nx=3, ny=3, invalid=True)
+    assert_raises(TypeError, obj.drawImage, bounds=bounds, scale=scale, wcs=galsim.PixelScale(3))
+    assert_raises(TypeError, obj.drawImage, bounds=bounds, wcs=scale)
+    assert_raises(TypeError, obj.drawImage, image=im10.array)
+    assert_raises(TypeError, obj.drawImage, wcs=galsim.FitsWCS('fits_files/tpv.fits'))
+
+    assert_raises(ValueError, obj.drawImage, bounds=galsim.BoundsI())
+    assert_raises(ValueError, obj.drawImage, image=im10, gain=0.)
+    assert_raises(ValueError, obj.drawImage, image=im10, gain=-1.)
+    assert_raises(ValueError, obj.drawImage, image=im10, area=0.)
+    assert_raises(ValueError, obj.drawImage, image=im10, area=-1.)
+    assert_raises(ValueError, obj.drawImage, image=im10, exptime=0.)
+    assert_raises(ValueError, obj.drawImage, image=im10, exptime=-1.)
+    assert_raises(ValueError, obj.drawImage, image=im10, method='invalid')
+
+    # These options are invalid unless metho=phot
+    assert_raises(TypeError, obj.drawImage, image=im10, n_photons=3)
+    assert_raises(TypeError, obj.drawImage, rng=galsim.BaseDeviate(234))
+    assert_raises(TypeError, obj.drawImage, max_extra_noise=23)
+    assert_raises(TypeError, obj.drawImage, poisson_flux=True)
+    assert_raises(TypeError, obj.drawImage, surface_ops=('dummy'))
+    assert_raises(TypeError, obj.drawImage, save_photons=True)
 
 
 @timer
@@ -438,9 +453,7 @@ def test_draw_methods():
             "obj.drawImage(real_space) differs from obj.drawImage")
 
     # fft should be similar, but not precisely equal.
-    import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with assert_warns(galsim.GalSimWarning):
         # This emits a warning about convolving two things with hard edges.
         im3 = obj.drawImage(image=im1.copy(), method='fft')
     print('im1, im3 max diff = ',abs(im1.array - im3.array).max())
@@ -719,12 +732,52 @@ def test_drawKImage():
     np.testing.assert_almost_equal(
             im6.scale, scale, 9,
             "obj.drawKImage(image,recenter=False) produced image with wrong scale")
-    np.testing.assert_equal(
-            im6.array.shape, (ny//4+1, nx//3+1),
-            "obj.drawKImage(image,recenter=False) produced image with wrong shape")
     np.testing.assert_almost_equal(
             im6.array, im4[bounds6].array, 9,
-            "obj.drawKImage(image,rcenter=False) produced different values than recenter=True")
+            "obj.drawKImage(image,recenter=False) produced different values than recenter=True")
+
+    # Can add to image if recenter is False
+    im6.setZero()
+    obj.drawKImage(im6, recenter=False, add_to_image=True)
+    np.testing.assert_almost_equal(
+            im6.scale, scale, 9,
+            "obj.drawKImage(image,add_to_image=True) produced image with wrong scale")
+    np.testing.assert_almost_equal(
+            im6.array, im4[bounds6].array, 9,
+            "obj.drawKImage(image,add_to_image=True) produced different values than recenter=True")
+
+    # .. or if image is centered.
+    im7 = im4.copy()
+    im7.setZero()
+    im7.setCenter(0,0)
+    obj.drawKImage(im7, add_to_image=True)
+    np.testing.assert_almost_equal(
+            im7.scale, scale, 9,
+            "obj.drawKImage(image,add_to_image=True) produced image with wrong scale")
+    np.testing.assert_almost_equal(
+            im7.array, im4.array, 9,
+            "obj.drawKImage(image,add_to_image=True) produced different values than recenter=True")
+
+    # .. but otherwise not.
+    with assert_raises(galsim.GalSimIncompatibleValuesError):
+        obj.drawKImage(image=im6, add_to_image=True)
+
+    # Other error combinations:
+    assert_raises(TypeError, obj.drawKImage, image=im6, bounds=bounds)
+    assert_raises(TypeError, obj.drawKImage, image=im6, dtype=int)
+    assert_raises(TypeError, obj.drawKImage, nx=3, ny=4, image=im6, scale=scale)
+    assert_raises(TypeError, obj.drawKImage, nx=3, ny=4, image=im6)
+    assert_raises(TypeError, obj.drawKImage, nx=3, ny=4, add_to_image=True)
+    assert_raises(TypeError, obj.drawKImage, nx=3, ny=4, bounds=bounds)
+    assert_raises(TypeError, obj.drawKImage, bounds=bounds, add_to_image=True)
+    assert_raises(TypeError, obj.drawKImage, image=galsim.Image(dtype=complex), add_to_image=True)
+    assert_raises(TypeError, obj.drawKImage, nx=3)
+    assert_raises(TypeError, obj.drawKImage, ny=3)
+    assert_raises(TypeError, obj.drawKImage, nx=3, ny=3, invalid=True)
+    assert_raises(TypeError, obj.drawKImage, bounds=bounds, wcs=galsim.PixelScale(3))
+    assert_raises(TypeError, obj.drawKImage, image=im6.array)
+    assert_raises(ValueError, obj.drawKImage, image=galsim.ImageF(3,4))
+    assert_raises(ValueError, obj.drawKImage, bounds=galsim.BoundsI())
 
 
 @timer
@@ -1010,6 +1063,16 @@ def test_shoot():
     image4 = (obj*0).drawImage(method='phot')
     np.testing.assert_equal(image4.array, 0)
 
+    # Warns if flux is 1 and n_photons not given.
+    with assert_warns(galsim.GalSimWarning):
+        psf = galsim.Gaussian(sigma=3)
+        psf.drawImage(method='phot')
+
+    # Also if flux << 1, n_photons will end up 0.
+    with assert_warns(galsim.GalSimWarning):
+        psf = galsim.Gaussian(sigma=3, flux=1.e-5)
+        psf.drawImage(method='phot')
+
 
 @timer
 def test_drawImage_area_exptime():
@@ -1052,13 +1115,11 @@ def test_drawImage_area_exptime():
 
     # Shooting with flux=1 raises a warning.
     obj1 = obj.withFlux(1)
-    with assert_warns(UserWarning):
+    with assert_warns(galsim.GalSimWarning):
         obj1.drawImage(method='phot')
     # But not if we explicitly tell it to shoot 1 photon
-    import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        obj1.drawImage(method='phot', n_photons=1)
+    with assert_raises(AssertionError):
+        assert_warns(galsim.GalSimWarning, obj1.drawImage, method='phot', n_photons=1)
 
 
 @timer
@@ -1133,6 +1194,8 @@ def test_fft():
     im1 = obj.drawKImage()
     N = 1162  # NB. It is useful to have this come out not a multiple of 4, since some of the
               #     calculation needs to be different when N/2 is odd.
+    np.testing.assert_equal(im1.bounds, galsim.BoundsI(-N/2,N/2,-N/2,N/2),
+                            "obj.drawKImage() produced image with wrong bounds")
     nyq_scale = obj.nyquist_scale
 
     # If we inverse_fft the above automatic image, it should match the automatic real image
@@ -1172,6 +1235,25 @@ def test_fft():
     np.testing.assert_almost_equal(
             im2_real.array, im2_alt_real.array, 9,
             "inverse_fft produce a different array than obj2.drawImage(nx,ny,method='sb')")
+
+    # wcs must be a PixelScale
+    xim.wcs = galsim.JacobianWCS(1.1,0.1,0.1,1)
+    with assert_raises(galsim.GalSimError):
+        xim.calculate_fft()
+    with assert_raises(galsim.GalSimError):
+        xim.calculate_inverse_fft()
+    xim.wcs = None
+    with assert_raises(galsim.GalSimError):
+        xim.calculate_fft()
+    with assert_raises(galsim.GalSimError):
+        xim.calculate_inverse_fft()
+
+    # inverse needs image with 0,0
+    xim.scale=1
+    xim.setOrigin(1,1)
+    with assert_raises(galsim.GalSimBoundsError):
+        xim.calculate_inverse_fft()
+
 
 @timer
 def test_np_fft():

@@ -20,9 +20,11 @@ Includes a Python layer version of the C++ int1d() function in galim::integ,
 and python image integrators for use in galsim.chromatic
 """
 
-from . import _galsim
 import numpy as np
 from functools import reduce
+
+from . import _galsim
+from .errors import GalSimError, GalSimRangeError, GalSimValueError, convert_cpp_errors
 
 def int1d(func, min, max, rel_err=1.e-6, abs_err=1.e-12):
     """Integrate a 1-dimensional function from min to max.
@@ -51,11 +53,12 @@ def int1d(func, min, max, rel_err=1.e-6, abs_err=1.e-12):
     max = float(max)
     rel_err = float(rel_err)
     abs_err = float(abs_err)
-    success, result = _galsim.PyInt1d(func,min,max,rel_err,abs_err)
+    with convert_cpp_errors():
+        success, result = _galsim.PyInt1d(func,min,max,rel_err,abs_err)
     if success:
         return result
     else:
-        raise RuntimeError(result)
+        raise GalSimError(result)
 
 def midpt(fvals, x):
     """Midpoint rule for integration.
@@ -93,9 +96,9 @@ def trapz(func, min, max, points=10000):
     """
     if not np.isscalar(points):
         if (np.max(points) > max) or (np.min(points) < min):
-            raise ValueError("Points outside of range: %s -- %s"%(min,max))
+            raise GalSimRangeError("Points outside of specified range", points, min, max)
     elif int(points) != points:
-        raise TypeError("'npoints' must be integer type or array")
+        raise TypeError("npoints must be integer type or array")
     else:
         points = np.linspace(min, max, points)
 
@@ -111,7 +114,7 @@ def midptRule(f, xs):
     @returns  Midpoint rule approximation to the integral.
     """
     if len(xs) < 2:
-        raise ValueError("Not enough points for midptRule integration")
+        raise GalSimValueError("Not enough points for midptRule integration", xs)
     x, xp = xs[:2]
     result = f(x)*(xp-x)
     for x, xp, xpp in zip(xs[0:-2], xs[1:-1], xs[2:]):
@@ -129,7 +132,7 @@ def trapzRule(f, xs):
     @returns  Trapezoidal rule approximation to the integral.
     """
     if len(xs) < 2:
-        raise ValueError("Not enough points for trapzRule integration")
+        raise GalSimValueError("Not enough points for trapzRule integration", xs)
     x, xp = xs[:2]
     result = 0.5*f(x)*(xp-x)
     for x, xp, xpp in zip(xs[0:-2], xs[1:-1], xs[2:]):
@@ -144,7 +147,7 @@ class ImageIntegrator(object):
     # subclasses must define
     # 1) a method `.calculateWaves(bandpass)` which will return the wavelengths at which to
     #    evaluate the integrand
-    # 2) an function attribute `.rule` which takes a integrand function as its first
+    # 2) an function attribute `.rule` which takes an integrand function as its first
     #    argument, and a list of evaluation wavelengths as its second argument, and returns
     #    an approximation to the integral.  (E.g., the function midptRule above)
 
@@ -187,20 +190,9 @@ class SampleIntegrator(ImageIntegrator):
                             galsim.integ.trapzRule  --  Use the trapezoidal integration rule
     """
     def __init__(self, rule):
-        if rule == midpt:
-            from galsim.deprecated import depr
-            depr('galsim.integ.midpt', 1.5, 'galsim.integ.midptRule')
-            rule = midptRule
-        elif rule == np.trapz:
-            from galsim.deprecated import depr
-            depr('np.trapz', 1.5, 'galsim.integ.trapzRule')
-            rule = trapzRule
         self.rule = rule
 
     def calculateWaves(self, bandpass):
-        if len(bandpass.wave_list) < 0:
-            raise AttributeError("Bandpass does not have attribute `wave_list` needed by " +
-                                 "SampleIntegrator.")
         return bandpass.wave_list
 
 
@@ -228,14 +220,6 @@ class ContinuousIntegrator(ImageIntegrator):
                         set to False in this case.  [default: True]
     """
     def __init__(self, rule, N=250, use_endpoints=True):
-        if rule == midpt:
-            from galsim.deprecated import depr
-            depr('galsim.integ.midpt', 1.5, 'galsim.integ.midptRule')
-            rule = midptRule
-        elif rule == np.trapz:
-            from galsim.deprecated import depr
-            depr('galsim.integ.trapz', 1.5, 'galsim.integ.trapzRule')
-            rule = trapzRule
         self.rule = rule
         self.N = N
         self.use_endpoints = use_endpoints

@@ -22,14 +22,8 @@ import os
 import sys
 import math
 
+import galsim
 from galsim_test_helpers import *
-
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 
 @timer
@@ -65,11 +59,16 @@ def test_float_value():
         'ran1' : { 'type' : 'Random', 'min' : 0.5, 'max' : 3 },
         'ran2' : { 'type' : 'Random', 'min' : -5, 'max' : 0 },
         'gauss1' : { 'type' : 'RandomGaussian', 'sigma' : 1 },
+        'gauss1b' : { 'type' : 'RandomGaussian', 'sigma' : 1 },
         'gauss2' : { 'type' : 'RandomGaussian', 'sigma' : 3, 'mean' : 4 },
         'gauss3' : { 'type' : 'RandomGaussian', 'sigma' : 1.5, 'min' : -2, 'max' : 2 },
         'gauss4' : { 'type' : 'RandomGaussian', 'sigma' : 0.5, 'min' : 0, 'max' : 0.8 },
         'gauss5' : { 'type' : 'RandomGaussian',
                      'sigma' : 0.3, 'mean' : 0.5, 'min' : 0, 'max' : 0.5 },
+        'gauss6' : { 'type' : 'RandomGaussian',
+                     'sigma' : 0.8, 'mean' : 0.3, 'min' : 2. },
+        'gauss7' : { 'type' : 'RandomGaussian',
+                     'sigma' : 1.3, 'mean' : 0.3, 'min' : -2., 'max' : 0. },
         'dist1' : { 'type' : 'RandomDistribution', 'function' : 'config_input/distribution.txt',
                     'interpolant' : 'linear' },
         'dist2' : { 'type' : 'RandomDistribution',
@@ -101,9 +100,22 @@ def test_float_value():
         'sum1' : { 'type' : 'Sum', 'items' : [ 72, '2.33', { 'type' : 'Dict', 'key' : 'f' } ] },
         'nfw' : { 'type' : 'NFWHaloMagnification' },
         'ps' : { 'type' : 'PowerSpectrumMagnification' },
-        'no_type' : { 'value' : 34. },
-        'bad_key' : { 'type' : 'RandomGaussian', 'sig' : 1 },
-        'bad_value' : { 'type' : 'RandomGaussian', 'sigma' : 'not a number' },
+        'bad1' : { 'value' : 34. },
+        'bad2' : { 'type' : 'RandomGaussian', 'sig' : 1 },
+        'bad3' : { 'type' : 'RandomGaussian', 'sigma' : 'not a number' },
+        'bad4' : { 'type' : 'Invalid', 'sig' : 1 },
+        'bad5' : { 'type' : 'Sequence', 'first' : 1, 'last' : 2.1, 'repeat' : -2 },
+        'bad6' : { 'type' : 'Sequence', 'first' : 1, 'last' : 2.1, 'nitems' : 12 },
+        'bad7' : { 'type' : 'RandomDistribution',
+                    'x' : [ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0 ],
+                    'interpolant' : 'linear' },
+        'bad8' : { 'type' : 'RandomDistribution', 'function' : 'x*x',
+                    'x' : [ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0 ],
+                    'f' : [ 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1 ],
+                    'interpolant' : 'linear' },
+        'bad9' : { 'type' : 'RandomDistribution', 'interpolant' : 'linear' },
+        'bad10' : { 'type' : 'RandomDistribution', 'function' : 'x*x', 'x_log' : True },
+        'bad11' : { 'type' : 'RandomDistribution', 'function' : 'x*x', 'f_log' : True },
 
         # Some items that would normally be set by the config processing
         'image_xsize' : 2000,
@@ -112,14 +124,7 @@ def test_float_value():
         'image_center' : galsim.PositionD(0,0),
     }
 
-    test_yaml = True
-    try:
-        galsim.config.ProcessInput(config)
-    except ImportError:
-        # We don't require PyYAML as a dependency, so if this fails, just remove the YAML dict.
-        del config['input']['dict'][2]
-        galsim.config.ProcessInput(config)
-        test_yaml = False
+    galsim.config.ProcessInput(config)
 
     # Test direct values
     val1 = galsim.config.ParseValue(config,'val1',config, float)[0]
@@ -210,6 +215,22 @@ def test_float_value():
             if gd_val > 0.5:
                 gd_val = 1-gd_val
         np.testing.assert_almost_equal(gauss5, gd_val)
+
+        gauss6 = galsim.config.ParseValue(config,'gauss6',config, float)[0]
+        gd = galsim.GaussianDeviate(rng,mean=0.,sigma=0.8)
+        gd_val = abs(gd())
+        while gd_val < 1.7:
+            gd_val = abs(gd())
+        gd_val += 0.3
+        np.testing.assert_almost_equal(gauss6, gd_val)
+
+        gauss7 = galsim.config.ParseValue(config,'gauss7',config, float)[0]
+        gd = galsim.GaussianDeviate(rng,mean=0.,sigma=1.3)
+        gd_val = abs(gd())
+        while gd_val < 0.3 or gd_val > 2.3:
+            gd_val = abs(gd())
+        gd_val = -gd_val + 0.3
+        np.testing.assert_almost_equal(gauss7, gd_val)
 
     # Test values generated from a distribution in a file
     dd=galsim.DistDeviate(rng,function='config_input/distribution.txt',interpolant='linear')
@@ -307,12 +328,8 @@ def test_float_value():
     dict = []
     dict.append(galsim.config.ParseValue(config,'dict1',config, float)[0])
     dict.append(galsim.config.ParseValue(config,'dict2',config, float)[0])
-    if test_yaml:
-        dict.append(galsim.config.ParseValue(config,'dict3',config, float)[0])
-        dict.append(galsim.config.ParseValue(config,'dict4',config, float)[0])
-    else:
-        dict.append(0.1)
-        dict.append(1.9)
+    dict.append(galsim.config.ParseValue(config,'dict3',config, float)[0])
+    dict.append(galsim.config.ParseValue(config,'dict4',config, float)[0])
     np.testing.assert_array_almost_equal(dict, [ 23.17, -17.23, 0.1, 1.9 ])
 
     sum1 = galsim.config.ParseValue(config,'sum1',config, float)[0]
@@ -321,11 +338,11 @@ def test_float_value():
     # Test NFWHaloMagnification
     galsim.config.SetupInputsForImage(config, None)
     # Raise an error because no world_pos
-    with assert_raises(ValueError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.ParseValue(config,'nfw',config, float)
     config['world_pos'] = galsim.PositionD(6,8)
     # Still raise an error because no redshift
-    with assert_raises(ValueError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.ParseValue(config,'nfw',config, float)
     # With this, it should work.
     config['gal'] = { 'redshift' : gal_z }
@@ -365,10 +382,18 @@ def test_float_value():
     assert "Warning: NFWHalo mu = -163.631846 means strong lensing." in cl.output
     np.testing.assert_almost_equal(nfw4, 3000.)
 
+    # Negative max_mu is invalid.
+    galsim.config.RemoveCurrent(config)
+    config['nfw']['max_mu'] = -3.
+    del config['nfw']['_get']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'nfw',config, float)
+
     # Test PowerSpectrumMagnification
     ps = galsim.PowerSpectrum(e_power_function='np.exp(-k**0.2)')
     galsim.config.RemoveCurrent(config)
-    config['rng'] = rng.duplicate()  # reset them back to be in sync
+    rng = galsim.BaseDeviate(31415)  # reset this so changes to tests above don't mess this up.
+    config['rng'] = rng.duplicate()
     ps.buildGrid(grid_spacing=10, ngrid=20, interpolant='linear', rng=rng)
     print("ps mag = ",ps.getMagnification((0.1,0.2)))
     galsim.config.SetupInputsForImage(config, None)
@@ -376,26 +401,42 @@ def test_float_value():
     np.testing.assert_almost_equal(ps1, ps.getMagnification((0.1,0.2)))
 
     # Beef up the amplitude to get strong lensing.
-    ps = galsim.PowerSpectrum(e_power_function='500 * np.exp(-k**0.2)')
+    ps = galsim.PowerSpectrum(e_power_function='100 * np.exp(-k**0.2)')
     ps.buildGrid(grid_spacing=10, ngrid=20, interpolant='linear', rng=rng)
     print("strong lensing mag = ",ps.getMagnification((0.1,0.2)))
-    galsim.config.RemoveCurrent(config)
-    del config['input_objs']
-    config['input']['power_spectrum']['e_power_function'] = '500 * np.exp(-k**0.2)'
+    config = galsim.config.CleanConfig(config)
+    config['input']['power_spectrum']['e_power_function'] = '100 * np.exp(-k**0.2)'
     with CaptureLog() as cl:
         galsim.config.SetupInputsForImage(config, logger=cl.logger)
         ps2a = galsim.config.ParseValue(config,'ps',config, float)[0]
-    assert 'PowerSpectrum mu = -3.643856 means strong lensing. Using mu=25.000000' in cl.output
+    print(cl.output)
+    assert 'PowerSpectrum mu = -2.778083 means strong lensing. Using mu=25.000000' in cl.output
     np.testing.assert_almost_equal(ps2a, 25.)
 
-    galsim.config.RemoveCurrent(config)
     # Need a different point that happens to have strong lensing, since the PS realization changed.
-    config['world_pos'] = galsim.PositionD(3.1,24.2)
+    config['world_pos'] = galsim.PositionD(5,75)
+    galsim.config.RemoveCurrent(config)
     with CaptureLog() as cl:
-        galsim.config.SetupInputsForImage(config, cl.logger)
+        galsim.config.SetupInputsForImage(config, logger=cl.logger)
         ps2b = galsim.config.ParseValue(config, 'ps', config, float)[0]
-    assert "Warning: PowerSpectrum mu = 29.287659 means strong lensing." in cl.output
+    print(cl.output)
+    assert "PowerSpectrum mu = 26.949446 means strong lensing. Using mu=25.000000" in cl.output
     np.testing.assert_almost_equal(ps2b, 25.)
+
+    # Or set a different maximum
+    galsim.config.RemoveCurrent(config)
+    config['ps']['max_mu'] = 30.
+    del config['ps']['_get']
+    ps3 = galsim.config.ParseValue(config,'ps',config, float)[0]
+    np.testing.assert_almost_equal(ps3, 26.949445807939387)
+
+    # Negative max_mu is invalid.
+    galsim.config.RemoveCurrent(config)
+    config['ps']['max_mu'] = -3.
+    del config['ps']['_get']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'ps',config, float)
+    config['ps']['max_mu'] = 25.
 
     # Out of bounds results in shear = 0, and a warning.
     galsim.config.RemoveCurrent(config)
@@ -407,10 +448,43 @@ def test_float_value():
     assert "Warning: position (1000.000000,2000.000000) not within the bounds" in cl.output
     np.testing.assert_almost_equal(ps2c, 1.)
 
-    # Should raise an AttributeError if there is no type in the dict
-    assert_raises(AttributeError, galsim.config.ParseValue, config, 'no_type', config, float)
-    assert_raises(AttributeError, galsim.config.ParseValue, config, 'bad_key', config, float)
-    assert_raises(ValueError, galsim.config.ParseValue, config, 'bad_value', config, float)
+    # Error if no world_pos
+    del config['world_pos']
+    galsim.config.RemoveCurrent(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'ps', config, float)
+
+    # Should raise a GalSimConfigError if there is no type in the dict
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad1', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad2', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad3', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad4', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad5', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad6', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad7', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad8', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad9', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad10', config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'bad11', config, float)
+
+    # Error if given the wrong type.  Should be float, not np.float16.
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'gauss1b',config, np.float16)
+    # Different path to (different) error if already processed into a _gen_fn.
+    galsim.config.ParseValue(config,'gauss1',config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'gauss1',config, np.float16)
 
 
 @timer
@@ -459,16 +533,16 @@ def test_int_value():
         'dict2' : { 'type' : 'Dict', 'num' : 1, 'key' : 'i' },
         'dict3' : { 'type' : 'Dict', 'num' : 2, 'key' : 'i' },
         'sum1' : { 'type' : 'Sum', 'items' : [ 72.3, '2', { 'type' : 'Dict', 'key' : 'i' } ] },
+        'cur1' : { 'type' : 'Current', 'key' : 'val1' },
+        'cur2' : { 'type' : 'Current', 'key' : 'list2.index.step' },
+        'bad1' : 'left',
+        'bad2' : int,
+        'bad3' : { 'type' : 'Current', 'key' : 'list2.index.type' },
+        'bad4' : { 'type' : 'Catalog' , 'num' : 2, 'col' : 'int1' },
+        'bad5' : { 'type' : 'Catalog' , 'num' : -1, 'col' : 'int1' },
     }
 
-    test_yaml = True
-    try:
-        galsim.config.ProcessInput(config)
-    except ImportError:
-        # We don't require PyYAML as a dependency, so if this fails, just remove the YAML dict.
-        del config['input']['dict'][2]
-        galsim.config.ProcessInput(config)
-        test_yaml = False
+    galsim.config.ProcessInput(config)
 
     # Test direct values
     val1 = galsim.config.ParseValue(config,'val1',config, int)[0]
@@ -615,14 +689,34 @@ def test_int_value():
     dict = []
     dict.append(galsim.config.ParseValue(config,'dict1',config, int)[0])
     dict.append(galsim.config.ParseValue(config,'dict2',config, int)[0])
-    if test_yaml:
-        dict.append(galsim.config.ParseValue(config,'dict3',config, int)[0])
-    else:
-        dict.append(1)
+    dict.append(galsim.config.ParseValue(config,'dict3',config, int)[0])
     np.testing.assert_array_equal(dict, [ 17, -23, 1 ])
 
     sum1 = galsim.config.ParseValue(config,'sum1', config, int)[0]
     np.testing.assert_almost_equal(sum1, 72 + 2 + 17)
+
+    cur1 = galsim.config.ParseValue(config,'cur1', config, int)[0]
+    np.testing.assert_array_equal(cur1, 9)
+    cur2 = galsim.config.ParseValue(config,'cur2', config, int)[0]
+    np.testing.assert_array_equal(cur2, -3)
+
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad1', config, int)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad2', config, int)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad3',config, int)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad4',config, int)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad5',config, int)
+    config = galsim.config.CleanConfig(config)
+    del config['input']['catalog']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'cat1',config, int)
+    del config['input']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'cat1',config, int)
 
 
 @timer
@@ -662,17 +756,13 @@ def test_bool_value():
                     'index' : { 'type' : 'Sequence', 'first' : 10, 'step' : -3 } },
         'dict1' : { 'type' : 'Dict', 'key' : 'b' },
         'dict2' : { 'type' : 'Dict', 'num' : 1, 'key' : 'b' },
-        'dict3' : { 'type' : 'Dict', 'num' : 2, 'key' : 'b' }
+        'dict3' : { 'type' : 'Dict', 'num' : 2, 'key' : 'b' },
+        'bad1' : 'left',
+        'bad2' : 'nope',
+        'bad3' : { 'type' : 'RandomBinomial', 'N' : 2 },
     }
 
-    test_yaml = True
-    try:
-        galsim.config.ProcessInput(config)
-    except ImportError:
-        # We don't require PyYAML as a dependency, so if this fails, just remove the YAML dict.
-        del config['input']['dict'][2]
-        galsim.config.ProcessInput(config)
-        test_yaml = False
+    galsim.config.ProcessInput(config)
 
     # Test direct values
     val1 = galsim.config.ParseValue(config,'val1',config, bool)[0]
@@ -771,11 +861,16 @@ def test_bool_value():
     dict = []
     dict.append(galsim.config.ParseValue(config,'dict1',config, bool)[0])
     dict.append(galsim.config.ParseValue(config,'dict2',config, bool)[0])
-    if test_yaml:
-        dict.append(galsim.config.ParseValue(config,'dict3',config, bool)[0])
-    else:
-        dict.append(False)
+    dict.append(galsim.config.ParseValue(config,'dict3',config, bool)[0])
     np.testing.assert_array_equal(dict, [ True, False, False ])
+
+    # Test bad values
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad1',config, bool)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad2',config, bool)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad3',config, bool)
 
 
 @timer
@@ -815,17 +910,15 @@ def test_str_value():
                              'Goodbye cruel world.', ', said Pink.'] },
         'dict1' : { 'type' : 'Dict', 'key' : 's' },
         'dict2' : { 'type' : 'Dict', 'num' : 1, 'key' : 's' },
-        'dict3' : { 'type' : 'Dict', 'num' : 2, 'key' : 's' }
+        'dict3' : { 'type' : 'Dict', 'num' : 2, 'key' : 's' },
+        'bad1' : { 'type' : 'FormattedStr', 'format' : 'realgal%02q.fits', 'items' : [4,5,6] },
+        'bad2' : { 'type' : 'FormattedStr', 'format' : 'realgal%02', 'items' : [4,5,6] },
+        'bad3' : { 'type' : 'FormattedStr', 'format' : 'realgal%02d_%d.fits', 'items' : [4,5,6] },
+        'bad4' : { 'type' : 'List', 'items' : 'Beautiful plumage! Ay?' },
+        'bad5' : { 'type' : 'List', 'items' : [ 'Beautiful', 'plumage!', 'Ay?' ], 'index' : 5 },
     }
 
-    test_yaml = True
-    try:
-        galsim.config.ProcessInput(config)
-    except ImportError:
-        # We don't require PyYAML as a dependency, so if this fails, just remove the YAML dict.
-        del config['input']['dict'][2]
-        galsim.config.ProcessInput(config)
-        test_yaml = False
+    galsim.config.ProcessInput(config)
 
     # Test direct values
     val1 = galsim.config.ParseValue(config,'val1',config, str)[0]
@@ -895,12 +988,19 @@ def test_str_value():
     dict = []
     dict.append(galsim.config.ParseValue(config,'dict1',config, str)[0])
     dict.append(galsim.config.ParseValue(config,'dict2',config, str)[0])
-    if test_yaml:
-        dict.append(galsim.config.ParseValue(config,'dict3',config, str)[0])
-    else:
-        dict.append('Brian')
+    dict.append(galsim.config.ParseValue(config,'dict3',config, str)[0])
     np.testing.assert_array_equal(dict, [ 'Life', 'of', 'Brian' ])
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad1',config, str)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad2',config, str)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad3',config, str)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad4',config, str)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad5',config, str)
 
 @timer
 def test_angle_value():
@@ -936,7 +1036,9 @@ def test_angle_value():
                     'items' : [ 73 * galsim.arcmin,
                                 8.9 * galsim.arcmin,
                                 3.14 * galsim.arcmin ] },
-        'sum1' : { 'type' : 'Sum', 'items' : [ 72 * galsim.degrees, '2.33 degrees' ] }
+        'sum1' : { 'type' : 'Sum', 'items' : [ 72 * galsim.degrees, '2.33 degrees' ] },
+        'bad1' : '1.9 * galsim.rradds',
+        'bad2' : { 'type' : 'Sum', 'items' : 72 * galsim.degrees },
     }
 
     galsim.config.ProcessInput(config)
@@ -1030,6 +1132,11 @@ def test_angle_value():
     sum1 = galsim.config.ParseValue(config,'sum1', config, galsim.Angle)[0]
     np.testing.assert_almost_equal(sum1 / galsim.degrees, 72 + 2.33)
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad1', config, galsim.Angle)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad2', config, galsim.Angle)
+
 
 @timer
 def test_shear_value():
@@ -1059,12 +1166,15 @@ def test_shear_value():
                               galsim.Shear(g1 = 0.1, g2 = 0.0) ] },
         'nfw' : { 'type' : 'NFWHaloShear' },
         'ps' : { 'type' : 'PowerSpectrumShear' },
+        'bad1' : { 'type' : 'G1G2', 'g1' : 0.5 },
+        'bad2' : { 'type' : 'G1G2' },
+        'bad3' : { 'type' : 'G1G2', 'g1' : 0.5, 'g2' : -0.1, 'g3' : 0.3 },
 
         'input' : { 'nfw_halo' : { 'mass' : halo_mass, 'conc' : halo_conc, 'redshift' : halo_z },
                     'power_spectrum' : { 'e_power_function' : 'np.exp(-k**0.2)',
                                          'grid_spacing' : 10, 'interpolant' : 'linear',
                                          'ngrid' : 40, 'center' : '5,5' },
-                  }
+                  },
     }
 
     # Test direct values
@@ -1140,11 +1250,11 @@ def test_shear_value():
     galsim.config.ProcessInput(config)
     galsim.config.SetupInputsForImage(config, None)
     # Raise an error because no world_pos
-    with assert_raises(ValueError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.ParseValue(config, 'nfw', config, galsim.Shear)
     config['world_pos'] = galsim.PositionD(6,8)
     # Still raise an error because no redshift
-    with assert_raises(ValueError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.ParseValue(config, 'nfw', config, galsim.Shear)
     # With this, it should work.
     config['gal'] = { 'redshift' : gal_z }
@@ -1188,8 +1298,7 @@ def test_shear_value():
     ps.buildGrid(grid_spacing=10, ngrid=40, center=galsim.PositionD(5,5), interpolant='linear',
                  rng=rng)
     print("strong lensing shear = ",ps.getShear((0.1,0.2)))
-    galsim.config.RemoveCurrent(config)
-    del config['input_objs']
+    config = galsim.config.CleanConfig(config)
     config['input']['power_spectrum']['e_power_function'] = '500 * np.exp(-k**0.2)'
     galsim.config.SetupInputsForImage(config, None)
     ps2b = ps.getShear((0.1,0.2))
@@ -1210,6 +1319,19 @@ def test_shear_value():
     assert "Warning: position (1000.000000,2000.000000) not within the bounds" in cl.output
     np.testing.assert_almost_equal((ps2c.g1, ps2c.g2), (0,0))
 
+    # Error if no world_pos
+    del config['world_pos']
+    galsim.config.RemoveCurrent(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config, 'ps', config, galsim.Shear)
+
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad1',config, galsim.Shear)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad2',config, galsim.Shear)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad3',config, galsim.Shear)
+
 
 @timer
 def test_pos_value():
@@ -1217,6 +1339,7 @@ def test_pos_value():
     """
     config = {
         'val1' : galsim.PositionD(0.1,0.2),
+        'val2' : '0.1, 0.2',
         'xy1' : { 'type' : 'XY', 'x' : 1.3, 'y' : 2.4 },
         'ran1' : { 'type' : 'RandomCircle', 'radius' : 3 },
         'ran2' : { 'type' : 'RandomCircle', 'radius' : 1, 'center' : galsim.PositionD(3,7) },
@@ -1231,10 +1354,26 @@ def test_pos_value():
                                galsim.PositionD(-0.5, 0.2),
                                galsim.PositionD(0.1, 0.0) ] },
         'radec' : { 'type' : 'RADec', 'ra' : 13.4 * galsim.hours, 'dec' : -0.3 * galsim.degrees },
+        'bad1' : '0.1, 0.2, 0.3',
+        'bad2' : '0.1,',
+        'bad3' : '0.1',
+        'bad4' : 'red, blue',
     }
+    # Also use this to check CopyConfig and CleanConfig.  Processing adds a lot to the
+    # config dict for efficiency.  But CopyConfig should copy the current state, and
+    # CleanConfig should get it back to a clean state after processing is done.
+    # The one catch is that it needs to know what the top-level fields are, and we use non-standard
+    # ones here.  So add them to top_level_fields.
+    galsim.config.top_level_fields += config.keys()
+    orig_config = galsim.config.CopyConfig(config)
+    assert orig_config == config
 
     # Test direct values
     val1 = galsim.config.ParseValue(config,'val1',config, galsim.PositionD)[0]
+    np.testing.assert_almost_equal(val1.x, 0.1)
+    np.testing.assert_almost_equal(val1.y, 0.2)
+
+    val2 = galsim.config.ParseValue(config,'val2',config, galsim.PositionD)[0]
     np.testing.assert_almost_equal(val1.x, 0.1)
     np.testing.assert_almost_equal(val1.y, 0.2)
 
@@ -1299,9 +1438,32 @@ def test_pos_value():
     np.testing.assert_almost_equal(sum1.y, -0.3 + 0.2 + 0.0)
 
     radec = galsim.config.ParseValue(config,'radec',config, galsim.CelestialCoord)[0]
-    np.testing.assert_almost_equal(radec.ra / galsim.hours, 13.4 - 24) # wraps around to negative.
+    np.testing.assert_almost_equal(radec.ra / galsim.hours, 13.4)
     np.testing.assert_almost_equal(radec.dec / galsim.degrees, -0.3)
 
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad1',config, galsim.PositionD)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad2',config, galsim.PositionD)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad3',config, galsim.PositionD)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad4',config, galsim.PositionD)
+
+    clean_config = galsim.config.CleanConfig(config)
+    # Remove all current values
+    galsim.config.RemoveCurrent(clean_config)
+    # And a few extra things we added by hand.
+    for key in ['obj_num', 'index_key', 'rng', 'image_num']:
+        del clean_config[key]
+    # And one extra thing that gets set as a default, but CleanConfig doesn't remove
+    del clean_config['list1']['index']
+    # Finally, this value got changed to a real Position, so it won't match the original
+    # unless we manually set it back to a string.
+    clean_config['val2'] = '0.1, 0.2'
+    print('orig_config = ',orig_config)
+    print('cleaned config = ',clean_config)
+    assert clean_config == orig_config
 
 @timer
 def test_eval():
@@ -1343,6 +1505,11 @@ def test_eval():
         # A couple more to cover the other various letter prefixes.
         'eval18' : { 'type' : 'Eval', 'str' : 'np.exp(-eval(half) * theta.rad**lit_two)' },
         'eval19' : { 'type' : 'Eval', 'str' : 'np.exp(-shear.g1 * pos.x * coord.ra.rad)' },
+        'bad1' : { 'type' : 'Eval', 'str' : 'npexp(-0.5)' },
+        'bad2' : { 'type' : 'Eval', 'str' : 'np.exp(-0.5 * x**2)', 'x' : 1.8 },
+        'bad3' : { 'type' : 'Eval', 'str' : 'np.exp(-0.5 * x**2)', 'qx' : 1.8 },
+        'bad4' : { 'type' : 'Eval', 'str' : 'np.exp(-0.5 * q**2)', 'fx' : 1.8 },
+        'bad5' : { 'type' : 'Eval', 'eval_str' : 'np.exp(-0.5 * x**2)', 'fx' : 1.8 },
 
         # These would be set by config in real runs, but just add them here for the tests.
         'image_pos' : galsim.PositionD(1.8,13),
@@ -1362,6 +1529,24 @@ def test_eval():
         test_val = galsim.config.ParseValue(config, 'eval%d'%i, config, float)[0]
         print('i = ',i, 'val = ',test_val,true_val)
         np.testing.assert_almost_equal(test_val, true_val)
+
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad1',config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad2',config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad3',config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad4',config, float)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'bad5',config, float)
+    config['eval_variables'] = 'itwo'
+    config = galsim.config.CleanConfig(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'eval3',config, float)
+    del config['eval_variables']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.ParseValue(config,'eval3',config, float)
 
     # Test the evaluation in RandomDistribution
     # Example config taken directly from Issue #776:

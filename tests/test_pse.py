@@ -21,14 +21,9 @@ import os
 import numpy as np
 import time
 
+import galsim
 from galsim_test_helpers import *
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 path, filename = os.path.split(__file__)
 datapath = os.path.abspath(os.path.join(path, "../examples/data/"))
@@ -177,8 +172,19 @@ def test_PSE_weight():
     np.testing.assert_allclose(P_eb3[1:]/P_theory[1:], 0., atol=zero_tolerance,
                                err_msg='Weighted PSE found EB cross-power')
 
-    assert_raises(ValueError, pse.estimate, g1, g2, weight_EE=8)
-    assert_raises(ValueError, pse.estimate, g1, g2, weight_BB='yes')
+    assert_raises(TypeError, pse.estimate, g1, g2, weight_EE=8)
+    assert_raises(TypeError, pse.estimate, g1, g2, weight_BB='yes')
+
+    # If N is fairly small, then can get zeros in the counts, which raises an error
+    array_size = 5
+    g1, g2 = ps.buildGrid(grid_spacing=grid_spacing, ngrid=array_size, units=galsim.degrees,
+                          rng=galsim.BaseDeviate(rand_seed))
+    pse = galsim.pse.PowerSpectrumEstimator(N=array_size,
+                                            sky_size_deg=array_size*grid_spacing,
+                                            nbin=n_ell)
+    with assert_raises(galsim.GalSimError):
+        pse.estimate(g1,g2)
+
 
 
 if __name__ == "__main__":

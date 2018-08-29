@@ -21,14 +21,9 @@ import numpy as np
 import os
 import sys
 
+import galsim
 from galsim_test_helpers import *
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 bppath = os.path.join(galsim.meta_data.share_dir, "bandpasses")
 sedpath = os.path.join(galsim.meta_data.share_dir, "SEDs")
@@ -38,32 +33,6 @@ sedpath = os.path.join(galsim.meta_data.share_dir, "SEDs")
 ### files that are saved here.  Modify with care!!!
 image_dir = './real_comparison_images'
 catalog_file = 'test_catalog.fits'
-
-ind_fake = 1 # index of mock galaxy (Gaussian) in catalog
-fake_gal_fwhm = 0.7 # arcsec
-fake_gal_shear1 = 0.29 # shear representing intrinsic shape component 1
-fake_gal_shear2 = -0.21 # shear representing intrinsic shape component 2; note non-round, to detect
-              # possible issues with x<->y or others that might not show up using circular galaxy
-fake_gal_flux = 1000.0
-fake_gal_orig_PSF_fwhm = 0.1 # arcsec
-fake_gal_orig_PSF_shear1 = 0.0
-fake_gal_orig_PSF_shear2 = -0.07
-
-targ_pixel_scale = [0.18, 0.25] # arcsec
-targ_PSF_fwhm = [0.7, 1.0] # arcsec
-targ_PSF_shear1 = [-0.03, 0.0]
-targ_PSF_shear2 = [0.05, -0.08]
-targ_applied_shear1 = 0.06
-targ_applied_shear2 = -0.04
-
-sigma_to_fwhm = 2.0*np.sqrt(2.0*np.log(2.0)) # multiply sigma by this to get FWHM for Gaussian
-fwhm_to_sigma = 1.0/sigma_to_fwhm
-
-ind_real = 0 # index of real galaxy in catalog
-shera_file = 'real_comparison_images/shera_result.fits'
-shera_target_PSF_file = 'real_comparison_images/shera_target_PSF.fits'
-shera_target_pixel_scale = 0.24
-shera_target_flux = 1000.0
 
 # some helper functions
 def ellip_to_moments(e1, e2, sigma):
@@ -80,10 +49,119 @@ def moments_to_ellip(mxx, myy, mxy):
     sig = (mxx*myy - mxy**2)**(0.25)
     return e1, e2, sig
 
+@timer
+def test_real_galaxy_catalog():
+    """Test basic operations of RealGalaxyCatalog"""
+
+    # Start with the test RGC that we will use throughout this test file.
+    rgc = galsim.RealGalaxyCatalog(file_name=catalog_file, dir=image_dir)
+
+    assert len(rgc) == rgc.nobjects == rgc.getNObjects() == 2
+    assert rgc.file_name == os.path.join(image_dir, catalog_file)
+    assert rgc.image_dir == image_dir
+
+    print('sample = ',rgc.sample)
+    print('ident = ',rgc.ident)
+    assert rgc.sample == None
+    assert len(rgc.ident) == 2
+
+    gal1 = rgc.getGalImage(0)
+    assert isinstance(gal1, galsim.Image)
+    psf1 = rgc.getPSFImage(0)
+    assert isinstance(psf1, galsim.Image)
+    noise, scale, var = rgc.getNoiseProperties(0)
+    assert noise is None  # No noise images for the test catalog.
+    print('noise info = ',noise, scale, var)
+    np.testing.assert_almost_equal(scale, 0.03)
+    assert var < 1.e-5
+
+    assert rgc.getIndexForID(100533) == 0
+
+    # With _nobjects_only=True, it doesn't finish loadin
+    rgc2 = galsim.RealGalaxyCatalog(file_name=catalog_file, dir=image_dir, _nobjects_only=True)
+    assert len(rgc2) == rgc2.nobjects == rgc2.getNObjects() == 2
+    assert rgc2.file_name == os.path.join(image_dir, catalog_file)
+    assert rgc2.image_dir == image_dir
+    assert rgc2.sample == None
+    with assert_raises(AttributeError):
+        rgc2.ident
+    with assert_raises(AttributeError):
+        rgc2.getGalImage(0)
+    with assert_raises(AttributeError):
+        rgc2.getPSFImage(0)
+
+    assert_raises(TypeError, galsim.RealGalaxyCatalog, catalog_file, dir=image_dir, sample='25.2')
+    assert_raises(ValueError, galsim.RealGalaxyCatalog, sample='23.2')
+    assert_raises(ValueError, galsim.RealGalaxyCatalog, sample='23.2')
+    assert_raises(OSError, galsim.RealGalaxyCatalog, file_name='invalid.fits')
+    assert_raises(ValueError, rgc.getIndexForID, 1234)
+    assert_raises(IndexError, rgc.getGalImage, 5)
+    assert_raises(IndexError, rgc.getPSFImage, 5)
+    assert_raises(IndexError, rgc.getNoiseProperties, 5)
+
+    # The test catalog doesn't have noise information, so we use this hack to test the
+    # behavior of another IndexError that would be raised in the usual case.
+    rgc.noise_file_name = [ 'none' for i in rgc.ident ]
+    assert_raises(IndexError, rgc.getNoiseProperties, 5)
+
+    assert_raises(OSError, galsim.RealGalaxyCatalog, dir=image_dir)
+    assert_raises(OSError, galsim.RealGalaxyCatalog, file_name='25.2.fits', dir=image_dir)
+    assert_raises(OSError, galsim.RealGalaxyCatalog, file_name='23.5.fits', dir='invalid')
+
+    # Test the catalog used by a few demos.
+    rgc = galsim.RealGalaxyCatalog(sample='23.5_example', dir='../examples/data')
+    assert(rgc.sample == '23.5_example')
+    assert(len(rgc.ident) == 100)
+
+    # Now test out the real ones.  But if they aren't installed, abort gracefully.
+    try:
+        rgc = galsim.RealGalaxyCatalog(sample='25.2')
+    except OSError:
+        print('Skipping tests of 25.2 sample, since not downloaded.')
+    else:
+        print('sample = ',rgc.sample)
+        print('len(ident) = ',len(rgc.ident))
+        assert(rgc.sample == '25.2')
+        assert(len(rgc.ident) == 87798)
+
+    try:
+        rgc = galsim.RealGalaxyCatalog(sample='23.5')
+    except OSError:
+        print('Skipping tests of 25.2 sample, since not downloaded.')
+    else:
+        print('sample = ',rgc.sample)
+        print('len(ident) = ',len(rgc.ident))
+        assert(rgc.sample == '23.5')
+        assert(len(rgc.ident) == 56062)
+
+    # Check error message if COSMOS galaxies aren't in share_dir.  Do this by temporarily
+    # changing share_dir value.
+    save = galsim.meta_data.share_dir
+    galsim.meta_data.share_dir = image_dir
+    try:
+        rgc = galsim.RealGalaxyCatalog(sample='23.5')
+    except OSError as err:
+        assert 'Run the program galsim_download_cosmos -s 23.5' in str(err)
+    else:
+        assert False, "Automatic sample=23.5 should have failed with share_dir = " + image_dir
+    galsim.meta_data.share_dir = save
+
 
 @timer
 def test_real_galaxy_ideal():
     """Test accuracy of various calculations with fake Gaussian RealGalaxy vs. ideal expectations"""
+    ind_fake = 1 # index of mock galaxy (Gaussian) in catalog
+    fake_gal_fwhm = 0.7 # arcsec
+    fake_gal_shear1 = 0.29 # shear representing intrinsic shape component 1
+    fake_gal_shear2 = -0.21 # shear representing intrinsic shape component 2
+    # note non-round, to detect possible issues with x<->y or others that might not show up using
+    # circular galaxy
+
+    fake_gal_flux = 1000.0
+    fake_gal_orig_PSF_fwhm = 0.1 # arcsec
+    fake_gal_orig_PSF_shear1 = 0.0
+    fake_gal_orig_PSF_shear2 = -0.07
+
     # read in faked Gaussian RealGalaxy from file
     rgc = galsim.RealGalaxyCatalog(catalog_file, dir=image_dir)
     assert len(rgc) == rgc.getNObjects() == rgc.nobjects == len(rgc.cat)
@@ -92,15 +170,24 @@ def test_real_galaxy_ideal():
     # or when trying to specify the galaxy too many ways
     rg_1 = galsim.RealGalaxy(rgc, index = ind_fake, rng = galsim.BaseDeviate(1234))
     rg_2 = galsim.RealGalaxy(rgc, random=True)
+
     assert_raises(TypeError, galsim.RealGalaxy, rgc, index=ind_fake, rng='foo')
-    assert_raises(AttributeError, galsim.RealGalaxy, rgc, index=ind_fake, id=0)
-    assert_raises(AttributeError, galsim.RealGalaxy, rgc, index=ind_fake, random=True)
-    assert_raises(AttributeError, galsim.RealGalaxy, rgc, id=0, random=True)
-    assert_raises(AttributeError, galsim.RealGalaxy, rgc)
+    assert_raises(TypeError, galsim.RealGalaxy, rgc)
+    assert_raises(TypeError, galsim.RealGalaxy, rgc, index=ind_fake, flux=12, flux_rescale=2)
+
+    assert_raises(ValueError, galsim.RealGalaxy, rgc, index=ind_fake, id=0)
+    assert_raises(ValueError, galsim.RealGalaxy, rgc, index=ind_fake, random=True)
+    assert_raises(ValueError, galsim.RealGalaxy, rgc, id=0, random=True)
+
     # Different RNGs give different random galaxies.
     rg_3 = galsim.RealGalaxy(rgc, random=True, rng=galsim.BaseDeviate(12345))
     rg_4 = galsim.RealGalaxy(rgc, random=True, rng=galsim.BaseDeviate(67890))
     assert rg_3.index != rg_4.index, 'Different seeds did not give different random objects!'
+
+    gsp = galsim.GSParams(xvalue_accuracy=1.e-8, kvalue_accuracy=1.e-8)
+    rg_5 = galsim.RealGalaxy(rgc, random=True, rng=galsim.BaseDeviate(67890), gsparams=gsp)
+    assert rg_5 != rg_4
+    assert rg_5 == rg_4.withGSParams(gsp)
 
     check_basic(rg, "RealGalaxy", approx_maxsb=True)
     check_basic(rg_1, "RealGalaxy", approx_maxsb=True)
@@ -120,6 +207,15 @@ def test_real_galaxy_ideal():
     ## for the generation of the ideal right answer, we need to add the intrinsic shape of the
     ## galaxy and the lensing shear using the rule for addition of distortions which is ugly, but oh
     ## well:
+    targ_pixel_scale = [0.18, 0.25] # arcsec
+    targ_PSF_fwhm = [0.7, 1.0] # arcsec
+    targ_PSF_shear1 = [-0.03, 0.0]
+    targ_PSF_shear2 = [0.05, -0.08]
+    targ_applied_shear1 = 0.06
+    targ_applied_shear2 = -0.04
+
+    fwhm_to_sigma = 1.0/(2.0*np.sqrt(2.0*np.log(2.0)))
+
     (d1, d2) = galsim.utilities.g1g2_to_e1e2(fake_gal_shear1, fake_gal_shear2)
     (d1app, d2app) = galsim.utilities.g1g2_to_e1e2(targ_applied_shear1, targ_applied_shear2)
     denom = 1.0 + d1*d1app + d2*d2app
@@ -173,7 +269,7 @@ def test_real_galaxy_makeFromImage():
     """Test accuracy of various calculations with fake Gaussian RealGalaxy vs. ideal expectations"""
     # read in faked Gaussian RealGalaxy from file
     rgc = galsim.RealGalaxyCatalog(catalog_file, dir=image_dir)
-    rg = galsim.RealGalaxy(rgc, index=ind_fake)
+    rg = galsim.RealGalaxy(rgc, index=1)
 
     gal_image = rg.gal_image
     psf = rg.original_psf
@@ -199,6 +295,12 @@ def test_real_galaxy_makeFromImage():
 @timer
 def test_real_galaxy_saved():
     """Test accuracy of various calculations with real RealGalaxy vs. stored SHERA result"""
+    ind_real = 0 # index of real galaxy in catalog
+    shera_file = 'real_comparison_images/shera_result.fits'
+    shera_target_PSF_file = 'real_comparison_images/shera_target_PSF.fits'
+    shera_target_pixel_scale = 0.24
+    shera_target_flux = 1000.0
+
     # read in real RealGalaxy from file
     # rgc = galsim.RealGalaxyCatalog(catalog_file, dir=image_dir)
     # This is an alternate way to give the directory -- as part of the catalog file name.
@@ -212,6 +314,8 @@ def test_real_galaxy_saved():
     shera_target_PSF_image.scale = shera_target_pixel_scale
 
     # simulate the same galaxy with GalSim
+    targ_applied_shear1 = 0.06
+    targ_applied_shear2 = -0.04
     tmp_gal = rg.withFlux(shera_target_flux).shear(g1=targ_applied_shear1,
                                                    g2=targ_applied_shear2)
     tmp_psf = galsim.InterpolatedImage(shera_target_PSF_image)
@@ -345,6 +449,14 @@ def test_crg_roundtrip():
         np.testing.assert_allclose(orig_f814w_mom.observed_shape.g2,
                                    im_f814w_mom.observed_shape.g2,
                                    rtol=0, atol=1e-4)
+
+    # Check some errors
+    cats = [f606w_cat, f814w_cat]
+    assert_raises(TypeError, galsim.ChromaticRealGalaxy, real_galaxy_catalogs=cats)
+    assert_raises(TypeError, galsim.ChromaticRealGalaxy, cats, index=3, id=4)
+    assert_raises(TypeError, galsim.ChromaticRealGalaxy, cats, index=3, random=True)
+    assert_raises(TypeError, galsim.ChromaticRealGalaxy, cats, id=4, random=True)
+    assert_raises(TypeError, galsim.ChromaticRealGalaxy, cats, random=True, rng='foo')
 
 
 @timer
@@ -690,6 +802,9 @@ def check_crg_noise(n_sed, n_im, n_trial, tol):
     print("Convolving by output PSF")
     objs = [galsim.Convolve(crg, out_PSF) for crg in crgs]
 
+    with assert_raises(galsim.GalSimError):
+        noise = objs[0].noise  # Invalid before drawImage is called
+
     print("Drawing through output filter")
     out_imgs = [obj.drawImage(visband, nx=30, ny=30, scale=0.1)
                 for obj in objs]
@@ -764,6 +879,7 @@ def test_crg_noise_pad():
 
 
 if __name__ == "__main__":
+    test_real_galaxy_catalog()
     test_real_galaxy_ideal()
     test_real_galaxy_saved()
     test_real_galaxy_makeFromImage()
