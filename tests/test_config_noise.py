@@ -23,14 +23,9 @@ import sys
 import logging
 import math
 
+import galsim
 from galsim_test_helpers import *
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 @timer
 def test_gaussian():
@@ -89,6 +84,12 @@ def test_gaussian():
     config['image']['noise']['variance'] = var
     im1c = galsim.config.BuildImage(config)
     np.testing.assert_equal(im1c.array, im1a.array)
+
+    # Base class usage is invalid
+    builder = galsim.config.noise.NoiseBuilder()
+    assert_raises(NotImplementedError, builder.addNoise, config, config, im1a, rng, var,
+                 draw_method='auto', logger=None)
+    assert_raises(NotImplementedError, builder.getNoiseVariance, config, config)
 
 
 @timer
@@ -179,6 +180,60 @@ def test_poisson():
     im3a += noise_im
     im3b = galsim.config.BuildImage(config)
     np.testing.assert_almost_equal(im3b.array, im3a.array, decimal=6)
+
+    # Can't have both sky_level and sky_level_pixel
+    config['image']['noise']['sky_level_pixel'] = 2000.
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # Must have a valid noise type
+    del config['image']['noise']['sky_level_pixel']
+    config['image']['noise']['type'] = 'Invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # noise must be a dict
+    config['image']['noise'] = 'Invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # Can't have signal_to_noise and  flux
+    config['image']['noise'] = { 'type' : 'Poisson', 'sky_level' : sky }
+    config['gal']['signal_to_noise'] = 100
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # This should work
+    del config['gal']['flux']
+    galsim.config.BuildImage(config)
+
+    # These now hit the errors in CalculateNoiseVariance rather than AddNoise
+    config['image']['noise']['type'] = 'Invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['noise'] = 'Invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    del config['image']['noise']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # If rather than signal_to_noise, we have an extra_weight output, then it hits
+    # a different error.
+    config['gal']['flux'] = 100
+    del config['gal']['signal_to_noise']
+    config['output'] = { 'weight' : {} }
+    config['image']['noise'] = { 'type' : 'Poisson', 'sky_level' : sky }
+    galsim.config.SetupExtraOutput(config)
+    galsim.config.SetupConfigFileNum(config, 0, 0, 0)
+    # This should work again.
+    galsim.config.BuildImage(config)
+    config['image']['noise']['type'] = 'Invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['noise'] = 'Invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
 
 
 @timer
@@ -609,8 +664,16 @@ def test_whiten():
 
     # If whitening already added too much noise, raise an exception
     config['image']['noise']['variance'] = 1.e-5
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildStamp(config)
+
+    # Can't have both whiten and symmetrize
+    config['image']['noise']['variance'] = 50
+    config['image']['noise']['symmetrize'] = 4
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config)
+    config['image']['noise']['symmetrize'] = False  # OK if false though.
+    galsim.config.BuildStamp(config)
 
     # 2. Poisson noise
     #####
@@ -657,7 +720,7 @@ def test_whiten():
     np.testing.assert_almost_equal(im3d.array, im3c.array, decimal=5)
 
     config['image']['noise']['sky_level_pixel'] = 1.e-5
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildStamp(config)
 
     # 3. CCDNoise
@@ -710,7 +773,7 @@ def test_whiten():
 
     config['image']['noise']['sky_level_pixel'] = 1.e-5
     config['image']['noise']['read_noise'] = 0
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildStamp(config)
 
     # 4. COSMOSNoise
@@ -734,7 +797,7 @@ def test_whiten():
 
     config['image']['noise']['variance'] = 1.e-5
     del config['_current_cn_tag']
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildStamp(config)
 
 

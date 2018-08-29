@@ -24,8 +24,10 @@ additional symmetries or a simple prescription for setting the many free paramet
 """
 from builtins import int
 import numpy as np
-import galsim
 
+from .image import Image
+from . import _galsim
+from .errors import GalSimValueError, convert_cpp_errors
 
 class BaseCDModel(object):
     """Base class for the most generic, i.e. no with symmetries or distance scaling relationships
@@ -65,21 +67,21 @@ class BaseCDModel(object):
         """
         # Some basic sanity checking
         if (a_l.shape[0] % 2 != 1):
-            raise ValueError("Input array must be odd-dimensioned")
+            raise GalSimValueError("Input array must be odd-dimensioned", a_l.shape)
         for a in (a_l, a_r, a_b, a_t):
             if a.shape[0] != a.shape[1]:
-                raise ValueError("Input array is not square")
+                raise GalSimValueError("Input array is not square", a.shape)
             if a.shape[0] != a_l.shape[0]:
-                raise ValueError("Input arrays not all the same dimensions")
+                raise GalSimValueError("Input arrays not all the same dimensions", a.shape)
         # Save the relevant dimension and the matrices storing deflection coefficients
         self.n = a_l.shape[0] // 2
         if (self.n < 1):
-            raise ValueError("Input arrays must be at least 3x3")
+            raise GalSimValueError("Input arrays must be at least 3x3", a_l.shape)
 
-        self.a_l = galsim.Image(a_l, dtype=np.float64, make_const=True)
-        self.a_r = galsim.Image(a_r, dtype=np.float64, make_const=True)
-        self.a_b = galsim.Image(a_b, dtype=np.float64, make_const=True)
-        self.a_t = galsim.Image(a_t, dtype=np.float64, make_const=True)
+        self.a_l = Image(a_l, dtype=np.float64, make_const=True)
+        self.a_r = Image(a_r, dtype=np.float64, make_const=True)
+        self.a_b = Image(a_b, dtype=np.float64, make_const=True)
+        self.a_t = Image(a_t, dtype=np.float64, make_const=True)
 
     def applyForward(self, image, gain_ratio=1.):
         """Apply the charge deflection model in the forward direction.
@@ -91,12 +93,12 @@ class BaseCDModel(object):
                            flat fields; default value is 1., which assumes the common case that your
                            flat and science images have the same gain value
         """
-        retimage = galsim.Image(
-            image=galsim._galsim._ApplyCD(
-                image._image, self.a_l._image, self.a_r._image, self.a_b._image, self.a_t._image,
-                int(self.n), float(gain_ratio)),
-            wcs=image.wcs)
-        return retimage
+        ret = image.copy()
+        with convert_cpp_errors():
+            _galsim._ApplyCD(
+                ret._image, image._image, self.a_l._image, self.a_r._image, self.a_b._image,
+                self.a_t._image, int(self.n), float(gain_ratio))
+        return ret
 
     def applyBackward(self, image, gain_ratio=1.):
         """Apply the charge deflection model in the backward direction (accurate to linear order).
@@ -205,8 +207,7 @@ class PowerLawCD(BaseCDModel):
         @param t      power-law amplitude for contribution to deflection along y from further away
         @param alpha  power-law exponent for deflection from further away
         """
-        if not isinstance(n, int):
-            raise ValueError("Input separation n must be an int")
+        n = int(n)
         # First define x and y coordinates in a square grid of ints of shape (2n + 1) * (2n + 1)
         x, y = np.meshgrid(np.arange(2 * n + 1) - n, np.arange(2 * n + 1) - n)
 

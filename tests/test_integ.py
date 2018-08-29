@@ -21,16 +21,9 @@
 from __future__ import print_function
 import numpy as np
 
+import galsim
 from galsim_test_helpers import *
 
-try:
-    import galsim
-except ImportError:
-    import os
-    import sys
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 test_sigma = 7.                   # test value of Gaussian sigma for integral tests
 test_rel_err = 1.e-7              # the relative accuracy at which to test
@@ -193,7 +186,7 @@ def test_invroot_infinite_limits():
         test_integral, true_result, decimal=test_decimal, verbose=True,
         err_msg="x^(-2) integral failed across interval [1, inf].")
 
-    with assert_raises(RuntimeError):
+    with assert_raises(galsim.GalSimError):
         galsim.integ.int1d(test_func, 0., 1., test_rel_err, test_abs_err)
 
 
@@ -240,6 +233,10 @@ def test_trapz_basic():
     np.testing.assert_almost_equal(
         result/expected_val, 1.0, decimal=6, verbose=True,
         err_msg='Test of trapzRule() with points failed for f(x)=x^2 from 0 to 1')
+
+    assert_raises(ValueError, galsim.integ.trapz, func, 0, 1, points=np.linspace(0, 1.1, 100))
+    assert_raises(ValueError, galsim.integ.trapz, func, 0.1, 1, points=np.linspace(0, 1, 100))
+    assert_raises(TypeError, galsim.integ.trapz, func, 0.1, 1, points=2.3)
 
 
 if __name__ == "__main__":

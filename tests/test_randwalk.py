@@ -20,15 +20,9 @@ from __future__ import print_function
 import numpy as np
 import os
 import sys
+
 import galsim
-
 from galsim_test_helpers import *
-
-try:
-    import galsim
-except ImportError:
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 
 @timer
@@ -48,12 +42,18 @@ def test_randwalk_defaults():
     assert rw.input_half_light_radius==hlr,\
         "expected hlr==%g, got %g" % (hlr, rw.input_half_light_radius)
 
-    g=rw.gaussians
-    ngauss=len(g)
-    assert ngauss == npoints,"expected %d gaussians, got %d" % (npoints, ngauss)
+    nobj=len(rw.points)
+    assert nobj == npoints,"expected %d objects, got %d" % (npoints, nobj)
 
     pts=rw.points
     assert pts.shape == (npoints,2),"expected (%d,2) shape for points, got %s" % (npoints, pts.shape)
+    np.testing.assert_almost_equal(rw.centroid.x, np.mean(pts[:,0]))
+    np.testing.assert_almost_equal(rw.centroid.y, np.mean(pts[:,1]))
+
+    gsp = galsim.GSParams(xvalue_accuracy=1.e-8, kvalue_accuracy=1.e-8)
+    rw2 = galsim.RandomWalk(npoints, hlr, rng=rng, gsparams=gsp)
+    assert rw2 != rw
+    assert rw2 == rw.withGSParams(gsp)
 
     # Run some basic tests of correctness
     psf = galsim.Gaussian(sigma=0.8)
@@ -89,11 +89,9 @@ def test_randwalk_valid_inputs():
     assert rw.flux==flux,\
         "expected flux==%g, got %g" % (flux, rw.flux)
 
-    g=rw.gaussians
-    ngauss=len(g)
-    assert ngauss == npoints==npoints,"expected %d gaussians, got %d" % (npoints, ngauss)
-
     pts=rw.points
+    nobj=len(pts)
+    assert nobj == npoints==npoints,"expected %d objects, got %d" % (npoints, nobj)
     assert pts.shape == (npoints,2),"expected (%d,2) shape for points, got %s" % (npoints, pts.shape)
 
 @timer
@@ -223,14 +221,13 @@ def test_randwalk_config():
     assert rw.input_half_light_radius==rwc.input_half_light_radius,\
         "expected hlr==%g, got %g" % (rw.input_half_light_radius, rw.input_half_light_radius)
 
-    ng=len(rw.gaussians)
-    ngc=len(rwc.gaussians)
-    assert ng==ngc,"expected %d gaussians, got %d" % (ng,ngc)
+    nobj=len(rw.points)
+    nobjc=len(rwc.points)
+    assert nobj==nobjc,"expected %d objects, got %d" % (nobj,nobjc)
 
     pts=rw.points
     ptsc=rwc.points
-    assert (pts.shape == ptsc.shape),\
-            "expected %s shape for points, got %s" % (pts.shape,ptsc.shape)
+    assert pts.shape == ptsc.shape, "expected %s shape for points, got %s" % (pts.shape,ptsc.shape)
 
 
 @timer

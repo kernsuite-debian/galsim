@@ -28,14 +28,8 @@ try:
 except ImportError:
     no_astroplan = True
 
+import galsim
 from galsim_test_helpers import *
-
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 bppath = os.path.join(galsim.meta_data.share_dir, "bandpasses")
 sedpath = os.path.join(galsim.meta_data.share_dir, "SEDs")
@@ -129,6 +123,97 @@ def test_photon_array():
     np.testing.assert_array_equal(photon_array.dxdz, 0.23)
     np.testing.assert_array_equal(photon_array.dydz, 0.88)
     np.testing.assert_array_equal(photon_array.wavelength, 912)
+
+    # Check toggling is_corr
+    assert not photon_array.isCorrelated()
+    photon_array.setCorrelated()
+    assert photon_array.isCorrelated()
+    photon_array.setCorrelated(False)
+    assert not photon_array.isCorrelated()
+    photon_array.setCorrelated(True)
+    assert photon_array.isCorrelated()
+
+    # Check rescaling the total flux
+    flux = photon_array.flux.sum()
+    np.testing.assert_almost_equal(photon_array.getTotalFlux(), flux)
+    photon_array.scaleFlux(17)
+    np.testing.assert_almost_equal(photon_array.getTotalFlux(), 17*flux)
+    photon_array.setTotalFlux(199)
+    np.testing.assert_almost_equal(photon_array.getTotalFlux(), 199)
+
+    # Check rescaling the positions
+    x = photon_array.x.copy()
+    y = photon_array.y.copy()
+    photon_array.scaleXY(1.9)
+    np.testing.assert_almost_equal(photon_array.x, 1.9*x)
+    np.testing.assert_almost_equal(photon_array.y, 1.9*y)
+
+    # Check ways to assign to photons
+    pa1 = galsim.PhotonArray(50)
+    pa1.x = photon_array.x[:50]
+    for i in range(50):
+        pa1.y[i] = photon_array.y[i]
+    pa1.flux[0:50] = photon_array.flux[:50]
+    pa1.dxdz = photon_array.dxdz[:50]
+    pa1.dydz = photon_array.dydz[:50]
+    pa1.wavelength = photon_array.wavelength[:50]
+    np.testing.assert_almost_equal(pa1.x, photon_array.x[:50])
+    np.testing.assert_almost_equal(pa1.y, photon_array.y[:50])
+    np.testing.assert_almost_equal(pa1.flux, photon_array.flux[:50])
+    np.testing.assert_almost_equal(pa1.dxdz, photon_array.dxdz[:50])
+    np.testing.assert_almost_equal(pa1.dydz, photon_array.dydz[:50])
+    np.testing.assert_almost_equal(pa1.wavelength, photon_array.wavelength[:50])
+
+    # Check assignAt
+    pa2 = galsim.PhotonArray(100)
+    pa2.assignAt(0, pa1)
+    pa2.assignAt(50, pa1)
+    np.testing.assert_almost_equal(pa2.x[:50], pa1.x)
+    np.testing.assert_almost_equal(pa2.y[:50], pa1.y)
+    np.testing.assert_almost_equal(pa2.flux[:50], pa1.flux)
+    np.testing.assert_almost_equal(pa2.dxdz[:50], pa1.dxdz)
+    np.testing.assert_almost_equal(pa2.dydz[:50], pa1.dydz)
+    np.testing.assert_almost_equal(pa2.wavelength[:50], pa1.wavelength)
+    np.testing.assert_almost_equal(pa2.x[50:], pa1.x)
+    np.testing.assert_almost_equal(pa2.y[50:], pa1.y)
+    np.testing.assert_almost_equal(pa2.flux[50:], pa1.flux)
+    np.testing.assert_almost_equal(pa2.dxdz[50:], pa1.dxdz)
+    np.testing.assert_almost_equal(pa2.dydz[50:], pa1.dydz)
+    np.testing.assert_almost_equal(pa2.wavelength[50:], pa1.wavelength)
+
+    # Error if it doesn't fit.
+    assert_raises(ValueError, pa2.assignAt, 90, pa1)
+
+    # Test some trivial usage of makeFromImage
+    zero = galsim.Image(4,4,init_value=0)
+    photons = galsim.PhotonArray.makeFromImage(zero)
+    print('photons = ',photons)
+    assert len(photons) == 16
+    np.testing.assert_array_equal(photons.flux, 0.)
+
+    ones = galsim.Image(4,4,init_value=1)
+    photons = galsim.PhotonArray.makeFromImage(ones)
+    print('photons = ',photons)
+    assert len(photons) == 16
+    np.testing.assert_almost_equal(photons.flux, 1.)
+
+    tens = galsim.Image(4,4,init_value=8)
+    photons = galsim.PhotonArray.makeFromImage(tens, max_flux=5.)
+    print('photons = ',photons)
+    assert len(photons) == 32
+    np.testing.assert_almost_equal(photons.flux, 4.)
+
+    assert_raises(ValueError, galsim.PhotonArray.makeFromImage, zero, max_flux=0.)
+    assert_raises(ValueError, galsim.PhotonArray.makeFromImage, zero, max_flux=-2)
+
+    # Check some other errors
+    undef = galsim.Image()
+    assert_raises(galsim.GalSimUndefinedBoundsError, pa2.addTo, undef)
+
+    # This shouldn't be able to happen in regular photon-shooting usage, so check here.
+    # TODO: Would be nice to have some real tests of the convolve functionality here,
+    #       rather than just implicitly in the shooting tests.
+    assert_raises(galsim.GalSimError, pa2.convolve, pa1)
 
     # Check picklability again with non-zero values for everything
     do_pickle(photon_array)
@@ -276,7 +361,10 @@ def test_photon_io():
     rng = galsim.UniformDeviate(1234)
     image = obj.drawImage(method='phot', n_photons=nphotons, save_photons=True, rng=rng)
     photons = image.photons
-    assert photons.size() == nphotons
+    assert photons.size() == len(photons) == nphotons
+
+    with assert_raises(galsim.GalSimIncompatibleValuesError):
+        obj.drawImage(method='phot', n_photons=nphotons, save_photons=True, maxN=1.e5)
 
     file_name = 'output/photons1.dat'
     photons.write(file_name)
@@ -448,22 +536,46 @@ def test_dcr():
                                    err_msg="PhotonDCR with alpha=0 didn't match")
 
     # Also check invalid parameters
+    zenith_coord = galsim.CelestialCoord(13.54 * galsim.hours, lsst_lat)
     assert_raises(TypeError, galsim.PhotonDCR,
                   zenith_angle=zenith_angle,
                   parallactic_angle=parallactic_angle)  # base_wavelength is required
     assert_raises(TypeError, galsim.PhotonDCR,
                   base_wavelength=500,
                   parallactic_angle=parallactic_angle)  # zenith_angle (somehow) is required
-    assert_raises(TypeError, galsim.PhotonDCR,
-                  base_wavelength=500,
+    assert_raises(TypeError, galsim.PhotonDCR, 500,
+                  zenith_angle=34.4,
+                  parallactic_angle=parallactic_angle)  # zenith_angle must be Angle
+    assert_raises(TypeError, galsim.PhotonDCR, 500,
+                  zenith_angle=zenith_angle,
+                  parallactic_angle=34.5)               # parallactic_angle must be Angle
+    assert_raises(TypeError, galsim.PhotonDCR, 500,
+                  obj_coord=obj_coord,
+                  latitude=lsst_lat)                    # Missing HA
+    assert_raises(TypeError, galsim.PhotonDCR, 500,
+                  obj_coord=obj_coord,
+                  HA=local_sidereal_time-obj_coord.ra)  # Missing latitude
+    assert_raises(TypeError, galsim.PhotonDCR, 500,
+                  obj_coord=obj_coord)                  # Need either zenith_coord, or (HA,lat)
+    assert_raises(TypeError, galsim.PhotonDCR, 500,
+                  obj_coord=obj_coord,
+                  zenith_coord=zenith_coord,
+                  HA=local_sidereal_time-obj_coord.ra)  # Can't have both HA and zenith_coord
+    assert_raises(TypeError, galsim.PhotonDCR, 500,
+                  obj_coord=obj_coord,
+                  zenith_coord=zenith_coord,
+                  latitude=lsst_lat)                    # Can't have both lat and zenith_coord
+    assert_raises(TypeError, galsim.PhotonDCR, 500,
                   zenith_angle=zenith_angle,
                   parallactic_angle=parallactic_angle,
                   H20_pressure=1.)                      # invalid (misspelled)
-    assert_raises(ValueError, galsim.PhotonDCR,
-                  base_wavelength=500,
+    assert_raises(ValueError, galsim.PhotonDCR, 500,
                   zenith_angle=zenith_angle,
                   parallactic_angle=parallactic_angle,
                   scale_unit='inches')                  # invalid scale_unit
+
+    # Invalid to use dcr without some way of setting wavelengths.
+    assert_raises(galsim.GalSimError, achrom.drawImage, im2, method='phot', surface_ops=[dcr])
 
 @unittest.skipIf(no_astroplan, 'Unable to import astroplan')
 @timer
@@ -693,5 +805,6 @@ if __name__ == '__main__':
     test_photon_angles()
     test_photon_io()
     test_dcr()
-    test_dcr_angles()
+    if not no_astroplan:
+        test_dcr_angles()
     test_dcr_moments()

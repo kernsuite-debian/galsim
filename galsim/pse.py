@@ -27,12 +27,15 @@ import numpy as np
 import os
 import sys
 
+from .errors import GalSimError, GalSimValueError, GalSimIncompatibleValuesError
+
+
 class PowerSpectrumEstimator(object):
     """
     Class for estimating the shear power spectrum from gridded shears.
 
-    The PowerSpectrumEstimator class can be used even on systems where GalSim is not installed.  It
-    just requires Python v2.6 or 2.7 and NumPy.
+    The PowerSpectrumEstimator class can be used even on systems where GalSim is not installed.
+    It just requires NumPy.
 
     This class stores all the data used in power spectrum estimation that is fixed with the geometry
     of the problem - the binning and spin weighting factors.
@@ -181,7 +184,7 @@ class PowerSpectrumEstimator(object):
             P,_ = np.histogram(self.l_abs, self.bin_edges, weights=C)
             count,_ = np.histogram(self.l_abs, self.bin_edges)
         if (count == 0).any():
-            raise RuntimeError("Logarithmic bin definition resulted in >=1 empty bin!")
+            raise GalSimError("Logarithmic bin definition resulted in >=1 empty bin!")
         return P/count
 
     def estimate(self, g1, g2, weight_EE=False, weight_BB=False, theory_func=None):
@@ -203,16 +206,18 @@ class PowerSpectrumEstimator(object):
                                 value of power at each point on the grid, and then see what results
                                 it gives for our chosen ell binning. [default: None]
         """
+        from .table import LookupTable
         # Check for the expected square geometry consistent with the previously-defined grid size.
         if g1.shape != g2.shape:
-            raise ValueError("g1 and g2 grids do not have the same shape!")
+            raise GalSimIncompatibleValuesError(
+                "g1 and g2 grids do not have the same shape.", g1=g1, g2=g2)
         if g1.shape[0] != g1.shape[1]:
-            raise ValueError("Input shear arrays are not square!")
+            raise GalSimValueError("Input shear arrays must be square.", g1.shape)
         if g1.shape[0] != self.N:
-            raise ValueError("Input shear array size is not correct!")
+            raise GalSimValueError("Input shear array size is not correct!", g1.shape)
 
         if not isinstance(weight_EE, bool) or not isinstance(weight_BB, bool):
-            raise ValueError("Input weight flags must be bools!")
+            raise TypeError("Input weight flags must be bools!")
 
         # Transform g1+j*g2 into Fourier space and rotate into E-B, then separate into E and B.
         EB = np.fft.ifft2(self.eb_rot * np.fft.fft2(g1 + 1j*g2))
@@ -246,7 +251,7 @@ class PowerSpectrumEstimator(object):
             new_CEE = np.zeros_like(new_ell)
             new_CEE[1:len(self.ell)+1] = np.real(C_EE)
             new_CEE[len(self.ell)+1] = new_CEE[len(self.ell)]
-            EE_table = galsim.LookupTable(new_ell, new_CEE)
+            EE_table = LookupTable(new_ell, new_CEE)
             ell_weight = EE_table(self.l_abs)
             C_EE = self._bin_power(E*np.conjugate(E), ell_weight=ell_weight)*(self.dx/self.N)**2
 
@@ -254,7 +259,7 @@ class PowerSpectrumEstimator(object):
             new_CBB = np.zeros_like(new_ell)
             new_CBB[1:len(self.ell)+1] = np.real(C_BB)
             new_CBB[len(self.ell)+1] = new_CBB[len(self.ell)]
-            BB_table = galsim.LookupTable(new_ell, new_CBB)
+            BB_table = LookupTable(new_ell, new_CBB)
             ell_weight = BB_table(self.l_abs)
             C_BB = self._bin_power(B*np.conjugate(B), ell_weight=ell_weight)*(self.dx/self.N)**2
 

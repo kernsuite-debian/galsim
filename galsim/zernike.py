@@ -22,6 +22,7 @@ Module contains code for evaluating and fitting Zernike polynomials
 import numpy as np
 
 from .utilities import LRU_Cache, binomial, horner2d, nCr, lazy_property
+from .errors import GalSimValueError, GalSimRangeError
 
 # Some utilities for working with Zernike polynomials
 
@@ -101,7 +102,7 @@ def _zern_coef_array(n, m, obscuration, shape):
     elif obscuration == 0:
         coefs = np.array(_zern_rho_coefs(n, m), dtype=np.complex128)
     else:
-        raise ValueError("Illegal obscuration: {}".format(obscuration))
+        raise GalSimRangeError("Invalid obscuration.", obscuration, 0., 1.)
     coefs /= _zern_norm(n, m)
     if m < 0:
         coefs *= -1j
@@ -431,17 +432,6 @@ class Zernike(object):
         self.R_outer = float(R_outer)
         self.R_inner = float(R_inner)
 
-    # _coef_array property only exists to support the deprecated OpticalPSF.coef_array attribute.
-    # It can be deleted in version 2.0.
-    @lazy_property
-    def _coef_array(self):
-        arr = _noll_coef_array(len(self.coef)-1, self.R_inner/self.R_outer).dot(self.coef[1:])
-
-        if self.R_outer != 1.0:
-            shape = arr.shape
-            arr /= self.R_outer**np.sum(np.mgrid[0:2*shape[0]:2, 0:shape[1]], axis=0)
-        return arr
-
     @lazy_property
     def _coef_array_xy(self):
         arr = _noll_coef_array_xy(len(self.coef)-1, self.R_inner/self.R_outer).dot(self.coef[1:])
@@ -576,7 +566,7 @@ def zernikeRotMatrix(jmax, theta):
     if m_jmax != 0:
         n_jmaxp1, m_jmaxp1 = noll_to_zern(jmax+1)
         if n_jmax == n_jmaxp1 and abs(m_jmaxp1) == abs(m_jmax):
-            raise ValueError("Cannot construct Zernike rotation matrix for jmax={}".format(jmax))
+            raise GalSimValueError("Cannot construct Zernike rotation matrix for this jmax.", jmax)
 
     R = np.zeros((jmax+1, jmax+1), dtype=np.float64)
     R[0, 0] = 1.0

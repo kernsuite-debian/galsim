@@ -29,7 +29,6 @@ def test_init():
     """Test generation of SecondKick profiles
     """
     obscuration = 0.5
-    bigGSP = galsim.GSParams(maximum_fft_size=8192)
 
     if __name__ == '__main__':
         lams = [300.0, 500.0, 1100.0]
@@ -46,16 +45,18 @@ def test_init():
                 t0 = time.time()
                 kwargs = {'lam':lam, 'r0':r0, 'kcrit':kcrit, 'diam':4.0}
                 print(kwargs)
-                kwargs['gsparams'] = bigGSP
 
                 sk = galsim.SecondKick(flux=2.2, **kwargs)
                 t1 = time.time()
                 print('   stepk, maxk = ',sk.stepk, sk.maxk)
                 np.testing.assert_almost_equal(sk.flux, 2.2)
                 do_pickle(sk)
-                do_pickle(sk._sbs)
-                do_pickle(sk._sbs, lambda x: (x.getFlux(), x.getGSParams()))
                 t2 = time.time()
+
+                gsp = galsim.GSParams(xvalue_accuracy=1.e-8, kvalue_accuracy=1.e-8)
+                sk2 = galsim.SecondKick(flux=2.2, gsparams=gsp, **kwargs)
+                assert sk2 != sk
+                assert sk2 == sk.withGSParams(gsp)
 
                 # Raw sk objects are hard to draw due to a large maxk/stepk ratio.
                 # Decrease maxk by convolving in a smallish Gaussian.
@@ -121,11 +122,27 @@ def test_limiting_cases():
             rtol=1e-3,
             atol=1e-4)
 
+    # Normally, one wouldn't use SecondKick.xValue, since it does a real-space convolution,
+    # so it's slow.  But we do allow it, so test it here.
+    import time
+    t0 = time.time()
+    xv_2k = sk.xValue(0,0)
+    print("xValue(0,0) = ",xv_2k)
+    t1 = time.time()
+    # The VonKarman * Airy xValue is much slower still, so don't do that.
+    # Instead compare it to the 'sb' image.
+    xv_image = limiting_case.drawImage(nx=1,ny=1,method='sb',scale=0.1)(1,1)
+    print('from image ',xv_image)
+    t2 = time.time()
+    print('t = ',t1-t0, t2-t1)
+    np.testing.assert_almost_equal(xv_2k, xv_image, decimal=3)
+
     # kcrit=inf
     sk = galsim.SecondKick(lam, r0, diam, obscuration, kcrit=np.inf)
     limiting_case = galsim.Airy(lam=lam, diam=diam, obscuration=obscuration)
 
     for k in [0.0, 0.1, 0.3, 1.0, 3.0, 10.0, 20.0]:
+        print(sk.kValue(0, k).real, limiting_case.kValue(0, k).real)
         np.testing.assert_allclose(
             sk.kValue(0, k).real,
             limiting_case.kValue(0, k).real,
@@ -197,17 +214,17 @@ def test_sk_scale():
     np.testing.assert_almost_equal(sk_arcsec.kValue(0.0, 0.0), sk_arcmin.kValue(0.0, 0.0))
     np.testing.assert_almost_equal(sk_arcsec.kValue(0.0, 1.0), sk_arcmin.kValue(0.0, 60.0))
     np.testing.assert_almost_equal(sk_arcsec.kValue(0.0, 10.0), sk_arcmin.kValue(0.0, 600.0))
-    np.testing.assert_almost_equal(sk_arcsec._sbs.xValue(galsim.PositionD(0.0, 6.0)),
-                                   sk_arcmin._sbs.xValue(galsim.PositionD(0.0, 0.1))/60**2,
+    np.testing.assert_almost_equal(sk_arcsec._sbs.xValue(galsim.PositionD(0.0, 6.0)._p),
+                                   sk_arcmin._sbs.xValue(galsim.PositionD(0.0, 0.1)._p)/60**2,
                                    decimal=5)
-    np.testing.assert_almost_equal(sk_arcsec._sbs.xValue(galsim.PositionD(0.0, 0.6)),
-                                   sk_arcmin._sbs.xValue(galsim.PositionD(0.0, 0.01))/60**2,
+    np.testing.assert_almost_equal(sk_arcsec._sbs.xValue(galsim.PositionD(0.0, 0.6)._p),
+                                   sk_arcmin._sbs.xValue(galsim.PositionD(0.0, 0.01)._p)/60**2,
                                    decimal=5)
-    np.testing.assert_almost_equal(sk_arcsec._sba.xValue(galsim.PositionD(0.0, 6.0)),
-                                   sk_arcmin._sba.xValue(galsim.PositionD(0.0, 0.1))/60**2,
+    np.testing.assert_almost_equal(sk_arcsec._sba.xValue(galsim.PositionD(0.0, 6.0)._p),
+                                   sk_arcmin._sba.xValue(galsim.PositionD(0.0, 0.1)._p)/60**2,
                                    decimal=5)
-    np.testing.assert_almost_equal(sk_arcsec._sba.xValue(galsim.PositionD(0.0, 0.6)),
-                                   sk_arcmin._sba.xValue(galsim.PositionD(0.0, 0.01))/60**2,
+    np.testing.assert_almost_equal(sk_arcsec._sba.xValue(galsim.PositionD(0.0, 0.6)._p),
+                                   sk_arcmin._sba.xValue(galsim.PositionD(0.0, 0.01)._p)/60**2,
                                    decimal=5)
 
     if __name__ == '__main__':

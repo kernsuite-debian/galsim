@@ -21,20 +21,14 @@ import numpy as np
 import os
 import sys
 
+import galsim
 from galsim_test_helpers import *
-
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 
 @timer
-def test_basic_catalog():
-    """Test basic operations on Catalog."""
-    # First the ASCII version
+def test_ascii_catalog():
+    """Test basic operations on an ASCII Catalog."""
+
     cat = galsim.Catalog(dir='config_input', file_name='catalog.txt')
     np.testing.assert_equal(cat.ncols, 12)
     np.testing.assert_equal(cat.nobjects, 3)
@@ -45,7 +39,54 @@ def test_basic_catalog():
 
     do_pickle(cat)
 
-    # Next the FITS version
+    cat2 = galsim.Catalog('catalog.txt', 'config_input', comments='#', file_type='ASCII')
+    assert cat2 == cat
+    assert len(cat2) == cat2.nobjects == cat2.getNObjects() == cat.nobjects
+    assert cat2.ncols == cat.ncols
+
+    # Special _nobjects_only option sets nobjects, but doesn't finish setting up object.
+    cat3 = galsim.Catalog('catalog.txt', 'config_input', _nobjects_only=True)
+    assert cat3 == cat
+    assert len(cat3) == cat3.nobjects == cat3.getNObjects() == cat.nobjects
+    with assert_raises(AttributeError):
+        assert cat3.ncols
+    with assert_raises(AttributeError):
+        assert cat3.get(1,11)
+
+    cat2 = galsim.Catalog('catalog2.txt', 'config_input', comments='%')
+    assert cat2.nobjects == cat.nobjects
+    np.testing.assert_array_equal(cat2.data, cat.data)
+    assert cat2 != cat
+    do_pickle(cat2)
+
+    cat3 = galsim.Catalog('catalog3.txt', 'config_input', comments='')
+    assert len(cat3) == cat3.nobjects == cat.nobjects
+    np.testing.assert_array_equal(cat3.data, cat.data)
+    assert cat3 != cat
+    do_pickle(cat3)
+
+    cat3n = galsim.Catalog('catalog3.txt', 'config_input', comments=None, _nobjects_only=True)
+    assert cat3n.nobjects == 3
+
+    # Check construction errors
+    assert_raises(galsim.GalSimValueError, galsim.Catalog, 'catalog.txt', file_type='invalid')
+    assert_raises(ValueError, galsim.Catalog, 'catalog3.txt', 'config_input', comments="#%")
+    assert_raises((IOError, OSError), galsim.Catalog, 'catalog.txt')  # Wrong dir
+    assert_raises((IOError, OSError), galsim.Catalog, 'invalid.txt', 'config_input')
+
+    # Check indexing errors
+    assert_raises(IndexError, cat.get, -1, 11)
+    assert_raises(IndexError, cat.get, 3, 11)
+    assert_raises(IndexError, cat.get, 1, -1)
+    assert_raises(IndexError, cat.get, 1, 50)
+    assert_raises(IndexError, cat.get, 'val', 11)
+    assert_raises(IndexError, cat.get, 3, 'val')
+
+
+@timer
+def test_fits_catalog():
+    """Test basic operations on a FITS Catalog."""
+
     cat = galsim.Catalog(dir='config_input', file_name='catalog.fits')
     np.testing.assert_equal(cat.ncols, 12)
     np.testing.assert_equal(cat.nobjects, 3)
@@ -56,10 +97,56 @@ def test_basic_catalog():
 
     do_pickle(cat)
 
+    cat2 = galsim.Catalog('catalog.fits', 'config_input', hdu=1, file_type='FITS')
+    assert cat2 == cat
+    assert len(cat2) == cat2.nobjects == cat2.getNObjects() == cat.nobjects
+    assert cat2.ncols == cat.ncols
+
+    # Special _nobjects_only option sets nobjects, but doesn't finish setting up object.
+    cat3 = galsim.Catalog('catalog.fits', 'config_input', _nobjects_only=True)
+    assert cat3 == cat
+    assert len(cat3) == cat3.nobjects == cat3.getNObjects() == cat.nobjects
+    with assert_raises(AttributeError):
+        assert cat3.ncols
+    with assert_raises(AttributeError):
+        cat3.get(1, 'angle2')
+
+    # Check construction errors
+    assert_raises(galsim.GalSimValueError, galsim.Catalog, 'catalog.fits', file_type='invalid')
+    assert_raises((IOError, OSError), galsim.Catalog, 'catalog.fits')  # Wrong dir
+    assert_raises((IOError, OSError), galsim.Catalog, 'invalid.fits', 'config_input')
+
+    # Check indexing errors
+    assert_raises(IndexError, cat.get, -1, 'angle2')
+    assert_raises(IndexError, cat.get, 3, 'angle2')
+    assert_raises(KeyError, cat.get, 1, 'invalid')
+    assert_raises(KeyError, cat.get, 1, 3)
+    assert_raises(IndexError, cat.get, 'val', 'angle2')
+
+    # Check non-default hdu
+    cat2 = galsim.Catalog('catalog2.fits', 'config_input', hdu=2)
+    assert len(cat2) == cat2.nobjects == cat.nobjects
+    np.testing.assert_array_equal(cat2.data, cat.data)
+    assert cat2 != cat
+    do_pickle(cat2)
+
+    cat3 = galsim.Catalog('catalog2.fits', 'config_input', hdu='data')
+    assert cat3.nobjects == cat.nobjects
+    np.testing.assert_array_equal(cat3.data, cat.data)
+    assert cat3 != cat
+    assert cat3 != cat2  # Even though these are the same, it doesn't know 'data' is hdu 2.
+    do_pickle(cat3)
+
+    cat2n = galsim.Catalog('catalog2.fits', 'config_input', hdu=2, _nobjects_only=True)
+    assert cat2n.nobjects == 3
+
+
 
 @timer
 def test_basic_dict():
     """Test basic operations on Dict."""
+    import yaml
+
     # Pickle
     d = galsim.Dict(dir='config_input', file_name='dict.p')
     np.testing.assert_equal(len(d), 4)
@@ -85,24 +172,53 @@ def test_basic_dict():
     do_pickle(d)
 
     # YAML
-    try:
-        import yaml
-    except ImportError as e:
-        # Raise a warning so this message shows up when doing pytest (or scons tests).
-        import warnings
-        warnings.warn("Unable to import yaml.  Skipping yaml tests")
-        print("Caught ",e)
-    else:
-        d = galsim.Dict(dir='config_input', file_name='dict.yaml')
-        np.testing.assert_equal(len(d), 5)
-        np.testing.assert_equal(d.file_type, 'YAML')
-        np.testing.assert_equal(d['i'], 1)
-        np.testing.assert_equal(d.get('s'), 'Brian')
-        np.testing.assert_equal(d.get('s2', 'Grail'), 'Grail')  # Not in dict.  Use default.
-        np.testing.assert_almost_equal(d.get('f', 999.), 0.1) # In dict.  Ignore default.
-        d2 = galsim.Dict(dir='config_input', file_name='dict.yaml', file_type='yaml')
-        assert d == d2
-        do_pickle(d)
+    d = galsim.Dict(dir='config_input', file_name='dict.yaml')
+    np.testing.assert_equal(len(d), 5)
+    np.testing.assert_equal(d.file_type, 'YAML')
+    np.testing.assert_equal(d['i'], 1)
+    np.testing.assert_equal(d.get('s'), 'Brian')
+    np.testing.assert_equal(d.get('s2', 'Grail'), 'Grail')  # Not in dict.  Use default.
+    np.testing.assert_almost_equal(d.get('f', 999.), 0.1) # In dict.  Ignore default.
+    d2 = galsim.Dict(dir='config_input', file_name='dict.yaml', file_type='yaml')
+    assert d == d2
+    do_pickle(d)
+
+    # We also have longer chained keys in dict.yaml
+    np.testing.assert_equal(d.get('noise.models.0.variance'), 0.12)
+    np.testing.assert_equal(d.get('noise.models.1.gain'), 1.9)
+    with assert_raises(KeyError):
+        d.get('invalid')
+    with assert_raises(KeyError):
+        d.get('noise.models.invalid')
+    with assert_raises(KeyError):
+        d.get('noise.models.1.invalid')
+    with assert_raises(IndexError):
+        d.get('noise.models.2.invalid')
+    with assert_raises(TypeError):
+        d.get('noise.models.1.gain.invalid')
+
+    # It's really hard to get to this error.  I think this is the only (contrived) way.
+    d3 = galsim.Dict('dict.yaml', 'config_input', key_split=None)
+    with assert_raises(KeyError):
+        d3.get('')
+    do_pickle(d3)
+
+    with assert_raises(galsim.GalSimValueError):
+        galsim.Dict(dir='config_input', file_name='dict.yaml', file_type='invalid')
+    with assert_raises(galsim.GalSimValueError):
+        galsim.Dict(dir='config_input', file_name='dict.txt')
+    with assert_raises((IOError, OSError)):
+        galsim.Catalog('invalid.yaml', 'config_input')
+
+    # Check some dict equivalences.
+    assert 'noise' in d
+    assert len(d) == 5
+    assert sorted(d.keys()) == ['b', 'f', 'i', 'noise', 's']
+    assert all( d[k] == v for k,v in d.items() )
+    assert all( d[k] == v for k,v in zip(d.keys(), d.values()) )
+    assert all( d[k] == v for k,v in d.iteritems() )
+    assert all( d[k] == v for k,v in zip(d.iterkeys(), d.itervalues()) )
+    assert all( k in d for k in d )
 
 
 @timer
@@ -123,21 +239,45 @@ def test_output_catalog():
     """Test basic operations on Catalog."""
     names = [ 'float1', 'float2', 'int1', 'int2', 'bool1', 'bool2',
               'str1', 'str2', 'str3', 'str4', 'angle', 'posi', 'posd', 'shear' ]
-    types = [ float, float, int, int, bool, bool, str, str, str, str,
+    types = [ float, 'f8', int, 'i4', bool, 'bool', str, 'str', 'S', 'S0',
               galsim.Angle, galsim.PositionI, galsim.PositionD, galsim.Shear ]
     out_cat = galsim.OutputCatalog(names, types)
 
-    out_cat.addRow( [1.234, 4.131, 9, -3, 1, True, "He's", '"ceased', 'to', 'be"',
-                      1.2 * galsim.degrees, galsim.PositionI(5,6),
-                      galsim.PositionD(0.3,-0.4), galsim.Shear(g1=0.2, g2=0.1) ])
-    out_cat.addRow( (2.345, -900, 0.0, 8, False, 0, "bleedin'", '"bereft', 'of', 'life"',
-                      11 * galsim.arcsec, galsim.PositionI(-35,106),
-                      galsim.PositionD(23.5,55.1), galsim.Shear(e1=-0.1, e2=0.15) ))
-    out_cat.addRow( [3.4560001, 8.e3, -4, 17.0, 1, 0, 'demised!', '"kicked', 'the', 'bucket"',
-                      0.4 * galsim.radians, galsim.PositionI(88,99),
-                      galsim.PositionD(-0.99,-0.88), galsim.Shear() ])
+    row1 = (1.234, 4.131, 9, -3, 1, True, "He's", '"ceased', 'to', 'be"',
+             1.2 * galsim.degrees, galsim.PositionI(5,6),
+             galsim.PositionD(0.3,-0.4), galsim.Shear(g1=0.2, g2=0.1))
+    row2 = (2.345, -900, 0.0, 8, False, 0, "bleedin'", '"bereft', 'of', 'life"',
+            11 * galsim.arcsec, galsim.PositionI(-35,106),
+            galsim.PositionD(23.5,55.1), galsim.Shear(e1=-0.1, e2=0.15))
+    row3 = (3.4560001, 8.e3, -4, 17.0, 1, 0, 'demised!', '"kicked', 'the', 'bucket"',
+            0.4 * galsim.radians, galsim.PositionI(88,99),
+            galsim.PositionD(-0.99,-0.88), galsim.Shear())
 
-    # First the ASCII version
+    out_cat.addRow(row1)
+    out_cat.addRow(row2)
+    out_cat.addRow(row3)
+
+    assert out_cat.names == out_cat.getNames() == names
+    assert out_cat.types == out_cat.getTypes() == types
+    assert len(out_cat) == out_cat.getNObjects() == out_cat.nobjects == 3
+    assert out_cat.getNCols() == out_cat.ncols == len(names)
+
+    # Can also set the types after the fact.
+    # MJ: I think this used to be used by the "truth" catalog extra output.
+    #     But it doesn't seem to be used there anymore.  Probably not by anything then.
+    #     I'm not sure how useful it is, I guess it doesn't hurt to leave it in.
+    out_cat2 = galsim.OutputCatalog(names)
+    assert out_cat2.types == [float] * len(names)
+    out_cat2.setTypes(types)
+    assert out_cat2.types == out_cat2.getTypes() == types
+
+    # Another feature that doesn't seem to be used anymore is you can add the rows out of order
+    # and just give a key to use for sorting at the end.
+    out_cat2.addRow(row3, 3)
+    out_cat2.addRow(row1, 1)
+    out_cat2.addRow(row2, 2)
+
+    # Check ASCII round trip
     out_cat.write(dir='output', file_name='catalog.dat')
     cat = galsim.Catalog(dir='output', file_name='catalog.dat')
     np.testing.assert_equal(cat.ncols, 17)
@@ -161,9 +301,7 @@ def test_output_catalog():
     np.testing.assert_almost_equal(cat.getFloat(0,15), 0.2)
     np.testing.assert_almost_equal(cat.getFloat(0,16), 0.1)
 
-    # Next the FITS version
-    if os.path.isfile('output/catalog.fits'):
-        os.remove('output/catalog.fits')
+    # Check FITS round trip
     out_cat.write(dir='output', file_name='catalog.fits')
     cat = galsim.Catalog(dir='output', file_name='catalog.fits')
     np.testing.assert_equal(cat.ncols, 17)
@@ -188,6 +326,12 @@ def test_output_catalog():
     np.testing.assert_almost_equal(cat.getFloat(0,'shear.g1'), 0.2)
     np.testing.assert_almost_equal(cat.getFloat(0,'shear.g2'), 0.1)
 
+    # The one that was made out of order should write the same file.
+    out_cat2.write(dir='output', file_name='catalog2.fits')
+    cat2 = galsim.Catalog(dir='output', file_name='catalog2.fits')
+    np.testing.assert_array_equal(cat2.data, cat.data)
+    assert cat2 != cat  # Because file_name is different.
+
     # Check that it properly overwrites an existing output file.
     out_cat.addRow( [1.234, 4.131, 9, -3, 1, True, "He's", '"ceased', 'to', 'be"',
                      1.2 * galsim.degrees, galsim.PositionI(5,6),
@@ -205,9 +349,16 @@ def test_output_catalog():
     out_cat2 = galsim.OutputCatalog(names, types)  # No data.
     do_pickle(out_cat2)
 
+    # Check errors
+    with assert_raises(galsim.GalSimValueError):
+        out_cat.addRow((1,2,3))  # Wrong length
+    with assert_raises(galsim.GalSimValueError):
+        out_cat.write(dir='output', file_name='catalog.txt', file_type='invalid')
+
 
 if __name__ == "__main__":
-    test_basic_catalog()
+    test_ascii_catalog()
+    test_fits_catalog()
     test_basic_dict()
     test_single_row()
     test_output_catalog()

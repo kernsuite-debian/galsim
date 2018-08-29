@@ -21,26 +21,18 @@ import numpy as np
 import os
 import sys
 
+import galsim
 from galsim_test_helpers import *
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 # Get whatever version of pyfits or astropy we are using
-from galsim._pyfits import pyfits, pyfits_version
+from galsim._pyfits import pyfits
 
 
 @timer
 def test_read():
     """Test reading a FitsHeader from an existing FITS file
     """
-    # Older pyfits versions treat the blank rows differently, so it comes out as 213.
-    # I don't know exactly when it switched, but for < 3.1, I'll just update this to
-    # whatever the initial value is.
     tpv_len = 215
 
     def check_tpv(header):
@@ -63,8 +55,6 @@ def test_read():
     dir = 'fits_files'
     # First option: give a file_name
     header = galsim.FitsHeader(file_name=os.path.join(dir,file_name))
-    if pyfits_version < '3.1':
-        tpv_len = len(header)
     check_tpv(header)
     do_pickle(header)
     # Let the FitsHeader init handle the dir
@@ -105,6 +95,11 @@ def test_read():
     check_tpv(header)
     do_pickle(header)
 
+    assert_raises(TypeError, galsim.FitsHeader, file_name=file_name, header=header)
+    with pyfits.open(os.path.join(dir,file_name)) as hdu_list:
+        assert_raises(TypeError, galsim.FitsHeader, file_name=file_name, hdu_list=hdu_list)
+        assert_raises(TypeError, galsim.FitsHeader, header=header, hdu_list=hdu_list)
+
     # Remove an item from the header
     # Start with file_name constructor, to test that the repr is changed by the edit.
     orig_header = header
@@ -112,8 +107,7 @@ def test_read():
     assert header == orig_header
     del header['AIRMASS']
     assert 'AIRMASS' not in header
-    if pyfits_version >= '3.1':
-        assert len(header) == tpv_len-1
+    assert len(header) == tpv_len-1
     assert header != orig_header
     do_pickle(header)
 
@@ -121,8 +115,7 @@ def test_read():
     assert header.get('AIRMASS', 2.0) == 2.0
     # key should still not be in the header
     assert 'AIRMASS' not in header
-    if pyfits_version >= '3.1':
-        assert len(header) == tpv_len-1
+    assert len(header) == tpv_len-1
     assert header != orig_header
 
     # Add items to a header

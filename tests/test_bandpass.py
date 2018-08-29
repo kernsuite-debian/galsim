@@ -19,16 +19,11 @@
 from __future__ import print_function
 import os
 import numpy as np
-from galsim_test_helpers import *
 import sys
 from astropy import units
 
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
+import galsim
+from galsim_test_helpers import *
 
 datapath = os.path.join(galsim.meta_data.share_dir, "bandpasses")
 
@@ -133,6 +128,10 @@ def test_Bandpass_basic():
                   blue_limit=700, red_limit=400)
     assert_raises(ValueError, galsim.Bandpass, throughput=lambda w: 1, wave_type='inches')
     assert_raises(ValueError, galsim.Bandpass, throughput=lambda w: 1, wave_type=units.Unit('Hz'))
+    assert_raises(ValueError, galsim.Bandpass, galsim.LookupTable([400,550], [0.4, 0.55], 'linear'),
+                  wave_type='nm', blue_limit=300, red_limit=500)
+    assert_raises(ValueError, galsim.Bandpass, galsim.LookupTable([400,550], [0.4, 0.55], 'linear'),
+                  wave_type='nm', blue_limit=500, red_limit=600)
 
 
 @timer
@@ -305,6 +304,11 @@ def test_ne():
            galsim.Bandpass(throughput=lt, wave_type='nm').withZeropoint(sed)]
     all_obj_diff(bps)
 
+    with assert_raises(galsim.GalSimValueError):
+           galsim.Bandpass(throughput=lt, wave_type='nm').withZeropoint('invalid')
+    with assert_raises(TypeError):
+           galsim.Bandpass(throughput=lt, wave_type='nm').withZeropoint(None)
+
 
 @timer
 def test_thin():
@@ -363,6 +367,13 @@ def test_zp():
     bp_tr = bp.truncate(blue_limit = 550.)
     assert bp_tr.zeropoint is None, \
         "Zeropoint erroneously preserved after truncating with explicit blue_limit"
+
+    with assert_raises(galsim.GalSimValueError):
+        bp_tr = bp.truncate(preserve_zp = 'False')
+    with assert_raises(galsim.GalSimValueError):
+        bp_tr = bp.truncate(preserve_zp = 43)
+    with assert_raises(galsim.GalSimIncompatibleValuesError):
+        galsim.Bandpass('1', 'nm', 400, 550).truncate(relative_throughput=1.e-4)
 
 
 @timer

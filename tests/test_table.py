@@ -27,15 +27,10 @@ from __future__ import print_function
 import os
 import numpy as np
 
+import galsim
 from galsim_test_helpers import *
 
 path, filename = os.path.split(__file__) # Get the path to this file for use below...
-try:
-    import galsim
-except ImportError:
-    import sys
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 TESTDIR=os.path.join(path, "table_comparison_files")
 
@@ -61,6 +56,12 @@ def test_table():
         table1 = galsim.LookupTable(x=args1,f=vals1,interpolant=interp)
         testvals1 = [ table1(x) for x in testargs1 ]
         assert len(table1) == len(args1)
+
+        np.testing.assert_array_equal(table1.getArgs(), args1)
+        np.testing.assert_array_equal(table1.getVals(), vals1)
+        assert table1.interpolant == interp
+        assert table1.isLogX() == False
+        assert table1.isLogF() == False
 
         # The 4th item is in the args list, so it should be exactly the same as the
         # corresponding item in the vals list.
@@ -95,11 +96,10 @@ def test_table():
                     "data for non-evenly-spaced args, with interpolant %s."%interp)
 
         # Check that out of bounds arguments, or ones with some crazy shape, raise an exception:
-        assert_raises(RuntimeError,table1,args1[0]-0.01)
-        assert_raises(RuntimeError,table1,args1[-1]+0.01)
-        assert_raises(RuntimeError,table2,args2[0]-0.01)
-        assert_raises(RuntimeError,table2,args2[-1]+0.01)
-        assert_raises(ValueError,table1,np.zeros((3,3,3))+args1[0])
+        assert_raises(ValueError,table1,args1[0]-0.01)
+        assert_raises(ValueError,table1,args1[-1]+0.01)
+        assert_raises(ValueError,table2,args2[0]-0.01)
+        assert_raises(ValueError,table2,args2[-1]+0.01)
 
         # These shouldn't raise any exception:
         table1(args1[0]+0.01)
@@ -116,12 +116,19 @@ def test_table():
         table1(np.array(testargs1).reshape((2,3)))
 
         # Check picklability
-        do_pickle(table1, lambda x: (x.getArgs(), x.getVals(), x.getInterp()))
-        do_pickle(table2, lambda x: (x.getArgs(), x.getVals(), x.getInterp()))
+        do_pickle(table1, lambda x: (tuple(x.getArgs()), tuple(x.getVals()), x.getInterp()))
+        do_pickle(table2, lambda x: (tuple(x.getArgs()), tuple(x.getVals()), x.getInterp()))
         do_pickle(table1)
         do_pickle(table2)
-        do_pickle(table1.table)
-        do_pickle(table2.table)
+
+    assert_raises(ValueError, galsim.LookupTable, x=args1, f=vals1, interpolant='invalid')
+    assert_raises(ValueError, galsim.LookupTable, x=[1], f=[1], interpolant='linear')
+    assert_raises(ValueError, galsim.LookupTable, x=[1,2], f=[1,2], interpolant='spline')
+    assert_raises(ValueError, galsim.LookupTable, x=[1,1,1], f=[1,2,3])
+    assert_raises(ValueError, galsim.LookupTable, x=[0,1,2], f=[1,2,3], x_log=True)
+    assert_raises(ValueError, galsim.LookupTable, x=[-1,0,1], f=[1,2,3], x_log=True)
+    assert_raises(ValueError, galsim.LookupTable, x=[0,1,2], f=[0,1,2], f_log=True)
+    assert_raises(ValueError, galsim.LookupTable, x=[0,1,2], f=[2,-1,2], f_log=True)
 
 
 @timer
@@ -172,6 +179,15 @@ def test_log():
         np.testing.assert_almost_equal(
             result_4, result_1, decimal=3,
             err_msg='Disagreement when interpolating in log(f)')
+
+    with assert_raises(galsim.GalSimRangeError):
+        tab_2(-1)
+    with assert_raises(galsim.GalSimRangeError):
+        tab_3(-1)
+    with assert_raises(galsim.GalSimRangeError):
+        tab_2(x_neg)
+    with assert_raises(galsim.GalSimRangeError):
+        tab_3(x_neg)
 
     # Check picklability
     do_pickle(tab_1)
@@ -260,13 +276,11 @@ def test_from_func():
 @timer
 def test_roundoff():
     table1 = galsim.LookupTable([1,2,3,4,5,6,7,8,9,10], [1,2,3,4,5,6,7,8,9,10])
-    try:
-        table1(1.0 - 1.e-7)
-        table1(10.0 + 1.e-7)
-    except:
-        raise ValueError("c++ LookupTable roundoff guard failed.")
-    assert_raises(RuntimeError, table1, 1.0-1.e5)
-    assert_raises(RuntimeError, table1, 10.0+1.e5)
+    # These should work without raising an exception
+    np.testing.assert_almost_equal(table1(1.0 - 1.e-7), 1.0, decimal=6)
+    np.testing.assert_almost_equal(table1(10.0 + 1.e-7), 10.0, decimal=6)
+    assert_raises(ValueError, table1, 1.0-1.e5)
+    assert_raises(ValueError, table1, 10.0+1.e5)
 
 
 @timer
@@ -295,7 +309,12 @@ def test_table2d():
 
     tab2d = galsim.LookupTable2D(x, y, z)
     do_pickle(tab2d)
-    do_pickle(tab2d.table)
+
+    np.testing.assert_array_equal(tab2d.getXArgs(), x)
+    np.testing.assert_array_equal(tab2d.getYArgs(), y)
+    np.testing.assert_array_equal(tab2d.getVals(), z)
+    assert tab2d.interpolant == 'linear'
+    assert tab2d.edge_mode == 'raise'
 
     newx = np.linspace(0.2, 3.1, 45)
     newy = np.linspace(0.3, 10.1, 85)
@@ -340,11 +359,13 @@ def test_table2d():
     # Test edge exception
     with assert_raises(ValueError):
         tab2d(1e6, 1e6)
+    with assert_raises(ValueError):
+        tab2d.gradient(1e6, 1e6)
 
     # Test edge wrapping
     # Check that can't construct table with edge-wrapping if edges don't match
     with assert_raises(ValueError):
-        galsim.LookupTable((x, y, z), dict(edge_mode='wrap'))
+        galsim.LookupTable2D(x, y, z, edge_mode='wrap')
 
     # Extend edges and make vals match
     x = np.append(x, x[-1] + (x[-1]-x[-2]))
@@ -365,7 +386,8 @@ def test_table2d():
 
 
     # Test floor/ceil/nearest interpolant
-    x = y = np.arange(5)
+    x = np.arange(5)
+    y = np.arange(5)
     z = x + y[:, np.newaxis]
     tab2d = galsim.LookupTable2D(x, y, z, interpolant='ceil')
     assert tab2d(2.4, 3.6) == 3+4, "Ceil interpolant failed."
@@ -373,6 +395,10 @@ def test_table2d():
     assert tab2d(2.4, 3.6) == 2+3, "Floor interpolant failed."
     tab2d = galsim.LookupTable2D(x, y, z, interpolant='nearest')
     assert tab2d(2.4, 3.6) == 2+4, "Nearest interpolant failed."
+
+    assert_raises(ValueError, galsim.LookupTable2D, x, y, z, interpolant='invalid')
+    assert_raises(ValueError, galsim.LookupTable2D, x, y, z, edge_mode='invalid')
+    assert_raises(ValueError, galsim.LookupTable2D, x, y, z[:-1,:-1])
 
     # Test that x,y arrays need to be strictly increasing.
     x[0] = x[1]

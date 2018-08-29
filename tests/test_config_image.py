@@ -25,14 +25,8 @@ import math
 import re
 import warnings
 
+import galsim
 from galsim_test_helpers import *
-
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 
 @timer
@@ -102,6 +96,47 @@ def test_single():
         im7 = im7_list[k]
         np.testing.assert_array_equal(im7.array, im1.array)
 
+    # Check some errors
+    config['stamp'] = 'Invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['stamp'] = { 'type' : 'Invalid' }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['stamp'] = { 'draw_method' : 'invalid' }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['stamp'] = { 'n_photons' : 200 }    # These next few require draw_method = phot
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['stamp'] = { 'poisson_flux' : False }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['stamp'] = { 'max_extra_noise' : 20. }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    del config['stamp']
+    config['image'] = 'Invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image'] = { 'type' : 'Invalid' }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImages(3,config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImages(0,config)
+    config['image'] = { 'type' : 'Single', 'xsize' : 32 }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image'] = { 'type' : 'Single', 'xsize' : 0, 'ysize' : 32 }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image'] = { 'type' : 'Single' }
+    del config['gal']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
 
 @timer
 def test_positions():
@@ -166,6 +201,13 @@ def test_positions():
     np.testing.assert_array_equal(im6.array, im1.array)
     assert im6.bounds == im1.bounds
 
+    del config['image']['image_pos']
+    del config['image']['world_pos']
+    config['stamp']['world_pos'] = { 'type' : 'Random' }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+
 @timer
 def test_phot():
     """Test draw_method=phot, which has extra allowed kwargs
@@ -210,7 +252,7 @@ def test_phot():
 
     # If max_extra_noise is given with n_photons, then ignore it.
     del config['_copied_image_keys_to_stamp']
-    config['image']['max_extra_noise'] = 0.1
+    config['stamp']['max_extra_noise'] = 0.1
     im3c = galsim.config.BuildImage(config)
     np.testing.assert_array_equal(im3c.array, im3a.array)
 
@@ -223,7 +265,7 @@ def test_phot():
     # So without the noise field, it will raise an exception.
     del config['image']['n_photons']
     del config['stamp']['n_photons']
-    with assert_raises(AttributeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildImage(config)
 
     # Using this much extra noise with a sky noise variance of 50 cuts the number of photons
@@ -236,6 +278,19 @@ def test_phot():
     im4a.addNoise(galsim.GaussianNoise(sigma=math.sqrt(50), rng=ud))
     im4b = galsim.config.BuildImage(config)
     np.testing.assert_array_equal(im4b.array, im4a.array)
+
+    # max_extra noise < 0 is invalid
+    config['stamp']['max_extra_noise'] = -1.
+    galsim.config.RemoveCurrent(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # Also negative variance noise is invalid.
+    config['stamp']['max_extra_noise'] = 0.1
+    config['image']['noise'] = { 'type' : 'Gaussian', 'variance' : -50 }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
 
 @timer
 def test_reject():
@@ -355,9 +410,8 @@ def test_reject():
     assert "obj 1: Skipping because field skip=True" in cl.output
     assert "obj 1: Caught SkipThisObject: e = None" in cl.output
     assert "Skipping object 1" in cl.output
-    assert "Object 0: Caught exception 105 index has gone past the number of entries" in cl.output
-    assert ("Object 0: Caught exception inner_radius (5.369661) must be less than radius "+
-            "(3.931733) for type=RandomCircle") in cl.output
+    assert "Object 0: Caught exception index=105 has gone past the number of entries" in cl.output
+    assert "Object 0: Caught exception inner_radius must be less than radius (3.931733)" in cl.output
     assert "Object 0: Caught exception Unable to evaluate string 'math.sqrt(x)'" in cl.output
     assert "obj 0: reject evaluated to True" in cl.output
     assert "Object 0: Rejecting this object and rebuilding" in cl.output
@@ -378,12 +432,12 @@ def test_reject():
     # If we lower the number of retries, we'll max out and abort the image
     config['stamp']['retry_failures'] = 10
     galsim.config.RemoveCurrent(config)
-    with assert_raises((ValueError, IndexError, RuntimeError)):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildStamps(nimages, config, do_noise=False)
     try:
         with CaptureLog() as cl:
             galsim.config.BuildStamps(nimages, config, do_noise=False, logger=cl.logger)
-    except (ValueError,IndexError,RuntimeError):
+    except (galsim.GalSimConfigError):
         pass
     #print(cl.output)
     assert "Object 0: Too many exceptions/rejections for this object. Aborting." in cl.output
@@ -394,7 +448,7 @@ def test_reject():
     try:
         with CaptureLog() as cl:
             galsim.config.BuildImages(nimages, config, logger=cl.logger)
-    except (ValueError,IndexError,RuntimeError):
+    except (ValueError,IndexError,galsim.GalSimError):
         pass
     #print(cl.output)
     assert "Exception caught when building image" in cl.output
@@ -404,7 +458,7 @@ def test_reject():
     try:
         with CaptureLog() as cl:
             galsim.config.BuildStamps(nimages, config, do_noise=False, logger=cl.logger)
-    except (ValueError,IndexError,RuntimeError):
+    except (ValueError,IndexError,galsim.GalSimError):
         pass
     #print(cl.output)
     assert re.search("Process-.: Exception caught when building stamp",cl.output)
@@ -412,7 +466,7 @@ def test_reject():
     try:
         with CaptureLog() as cl:
             galsim.config.BuildImages(nimages, config, logger=cl.logger)
-    except (ValueError,IndexError,RuntimeError):
+    except (ValueError,IndexError,galsim.GalSimError):
         pass
     #print(cl.output)
     assert re.search("Process-.: Exception caught when building image",cl.output)
@@ -551,6 +605,44 @@ def test_ring():
         print('gal1a = ',gal1a)
         print('gal1b = ',gal1b)
         gsobject_compare(gal1a, gal1b)
+
+    # Make sure it all runs using the normal syntax
+    stamp = galsim.config.BuildStamp(config)
+
+    # num <= 0 is invalid
+    config['stamp']['num'] = 0
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config)
+    config['stamp']['num'] = -1
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config)
+    del config['stamp']['num']
+    del config['stamp']['_get']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamps(10, config)   # Different error is making multiple stamps.
+    # Check invalid index.  (Ususally this is automatic and can't be wrong, but it is
+    # permissible to set it by hand.)
+    config['stamp']['num'] = 2
+    config['stamp']['index'] = 2
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config)
+    config['stamp']['index'] = -1
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config)
+    # Starting on an odd index is an error.  It's hard to make this happen in practice,
+    # but her we can do it by manually deleting the first attribute.
+    del galsim.config.stamp.valid_stamp_types['Ring'].first
+    config['stamp']['index'] = 1
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config)
+    # Invalid to just have a psf.
+    config['psf'] = config['gal']
+    del config['gal']
+    config['stamp']['index'] = 0
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config)
 
     config = {
         'stamp' : {
@@ -711,6 +803,10 @@ def test_scattered():
             np.testing.assert_almost_equal(ixy, 0., decimal=3)
             np.testing.assert_almost_equal(iyy / (sigma/scale)**2, 1, decimal=1)
 
+    config['image']['index_convention'] = 'invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
     # Check that stamp_xsize, stamp_ysize, image_pos use the object count, rather than the
     # image count.
     config = copy.deepcopy(base_config)
@@ -752,26 +848,63 @@ def test_scattered():
 
     # Check error message for missing nobjects
     del config['image']['nobjects']
-    with assert_raises(AttributeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildImage(config)
     # Also if there is an input field that doesn't have nobj capability
     config['input'] = { 'dict' : { 'dir' : 'config_input', 'file_name' : 'dict.p' } }
-    with assert_raises(AttributeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildImage(config)
     # However, an input field that does have nobj will return something for nobjects.
     # This catalog has 3 rows, so equivalent to nobjects = 3
     config['input'] = { 'catalog' : { 'dir' : 'config_input', 'file_name' : 'catalog.txt' } }
-    del config['input_objs']
-    galsim.config.RemoveCurrent(config)
+    config = galsim.config.CleanConfig(config)
     image = galsim.config.BuildImage(config)
+    np.testing.assert_almost_equal(image.array, image2.array)
+
+    del config['image']['size']
+    del config['image']['_get']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['xsize'] = size
+    del config['image']['_get']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['ysize'] = size
+    del config['image']['_get']
+
+    # If doing datacube, sizes have to be consistent.
+    config['image_force_xsize'] = size
+    config['image_force_ysize'] = size
+    galsim.config.BuildImage(config)  # This works
+
+    # These don't.
+    config['image']['xsize'] = size-1
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['xsize'] = size
+    config['image']['ysize'] = size+1
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['ysize'] = size
+
+    # Can't have both image_pos and world_pos
+    config['image']['world_pos'] = {
+        'type' : 'List',
+        'items' : [ galsim.PositionD(x1*scale, y1*scale),
+                    galsim.PositionD(x2*scale, y2*scale),
+                    galsim.PositionD(x3*scale, y3*scale) ]
+    }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    del config['image']['image_pos']
+    image = galsim.config.BuildImage(config)  # But just world_pos is fine.
     np.testing.assert_almost_equal(image.array, image2.array)
 
     # When starting from the file state, there is some extra code to test about this, so
     # check that here.
     config['output'] = { 'type' : 'MultiFits', 'file_name' : 'output/test_scattered.fits',
                          'nimages' : 2 }
-    del config['input_objs']
-    galsim.config.RemoveCurrent(config)
+    config = galsim.config.CleanConfig(config)
     galsim.config.BuildFile(config)
     image = galsim.fits.read('output/test_scattered.fits')
     np.testing.assert_almost_equal(image.array, image2.array)
@@ -912,7 +1045,7 @@ def test_tiled():
             'type' : 'Gaussian',
             'sigma' : { 'type': 'Random', 'min': 1, 'max': 2 },
             'flux' : '$image_pos.x + image_pos.y',
-        }
+        },
     }
 
     seed = 1234
@@ -1009,6 +1142,154 @@ def test_tiled():
     # Compare to what config builds
     im3b = galsim.config.BuildImage(config)
     np.testing.assert_array_equal(im3b.array, im3a.array)
+
+    # Check errors
+    # sizes need to be > 0
+    config['image']['stamp_xsize'] = 0
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['stamp_xsize'] = xsize
+    config['image']['stamp_ysize'] = -30
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['stamp_ysize'] = ysize
+    config['image']['order'] = 'invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['order'] = 'col'
+    del config['image']['nx_tiles']
+    del config['image']['_get']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImages(2,config)
+    config['image']['nx_tiles'] = nx
+
+    # If doing datacube, sizes have to be consistent.
+    config['image']['stamp_xsize'] = xsize
+    config['image']['stamp_ysize'] = ysize
+    config['image_force_xsize'] = im3b.array.shape[1]
+    config['image_force_ysize'] = im3b.array.shape[0]
+    galsim.config.BuildImage(config)  # This works.
+
+    # These don't.
+    config['image']['stamp_xsize'] = xsize-1
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['stamp_xsize'] = xsize
+    config['image']['stamp_ysize'] = ysize+1
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['image']['stamp_ysize'] = ysize
+    config['image']['yborder'] = xborder
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # If tile with a square grid, then PowerSpectrum can omit grid_spacing and ngrid.
+    size = 32
+    config = {
+        'image' : {
+            'type' : 'Tiled',
+            'nx_tiles' : nx,
+            'ny_tiles' : ny,
+            'stamp_size' : size,
+            'pixel_scale' : scale,
+
+            'random_seed' : 1234,
+        },
+        'gal' : {
+            'type' : 'Gaussian',
+            'sigma' : { 'type': 'Random', 'min': 1, 'max': 2 },
+            'flux' : '$image_pos.x + image_pos.y',
+            'shear' : { 'type' : 'PowerSpectrumShear' },
+        },
+        'input' : {
+            'power_spectrum' : { 'e_power_function' : 'np.exp(-k**0.2)' },
+        },
+    }
+
+    seed = 1234
+    ps = galsim.PowerSpectrum(e_power_function=lambda k: np.exp(-k**0.2))
+    rng = galsim.BaseDeviate(seed)
+    im4a = galsim.Image(nx*size, ny*size, scale=scale)
+    center = im4a.true_center * scale
+    ps.buildGrid(grid_spacing=size*scale, ngrid=max(nx,ny), rng=rng, center=center)
+    for j in range(ny):
+        for i in range(nx):
+            seed += 1
+            ud = galsim.UniformDeviate(seed)
+            xorigin = i * size + 1
+            yorigin = j * size + 1
+            x = xorigin + (size-1)/2.
+            y = yorigin + (size-1)/2.
+            stamp = galsim.Image(size,size, scale=scale)
+            stamp.setOrigin(xorigin,yorigin)
+
+            sigma = ud() + 1
+            flux = x + y
+            gal = galsim.Gaussian(sigma=sigma, flux=flux)
+            g1, g2 = ps.getShear(galsim.PositionD(x*scale,y*scale))
+            gal = gal.shear(g1=g1, g2=g2)
+            gal.drawImage(stamp)
+            im4a[stamp.bounds] = stamp
+
+    # Compare to what config builds
+    im4b = galsim.config.BuildImage(config)
+    np.testing.assert_array_equal(im4b.array, im4a.array)
+
+    # If grid sizes aren't square, it also works properly, but with more complicated ngrid calc.
+    config = galsim.config.CleanConfig(config)
+    del config['image']['stamp_size']
+    config['image']['stamp_xsize'] = xsize
+    config['image']['stamp_ysize'] = ysize
+    seed = 1234
+    rng = galsim.BaseDeviate(seed)
+    im5a = galsim.Image(nx*xsize, ny*ysize, scale=scale)
+    center = im5a.true_center * scale
+    grid_spacing = min(xsize,ysize) * scale
+    ngrid = int(math.ceil(max(nx*xsize, ny*ysize) * scale / grid_spacing))
+    ps.buildGrid(grid_spacing=grid_spacing, ngrid=ngrid, rng=rng, center=center)
+    for j in range(ny):
+        for i in range(nx):
+            seed += 1
+            ud = galsim.UniformDeviate(seed)
+            xorigin = i * xsize + 1
+            yorigin = j * ysize + 1
+            x = xorigin + (xsize-1)/2.
+            y = yorigin + (ysize-1)/2.
+            stamp = galsim.Image(xsize,ysize, scale=scale)
+            stamp.setOrigin(xorigin,yorigin)
+
+            sigma = ud() + 1
+            flux = x + y
+            gal = galsim.Gaussian(sigma=sigma, flux=flux)
+            g1, g2 = ps.getShear(galsim.PositionD(x*scale,y*scale))
+            gal = gal.shear(g1=g1, g2=g2)
+            gal.drawImage(stamp)
+            im5a[stamp.bounds] = stamp
+
+    im5b = galsim.config.BuildImage(config)
+    np.testing.assert_array_equal(im5b.array, im5a.array)
+
+    # Finally, if the image type isn't tiled, then grid_spacing is required.
+    config = {
+        'image' : {
+            'type' : 'Scattered',
+            'size': nx*size,
+            'nobjects' : nx*ny,
+            'pixel_scale' : scale,
+            'random_seed' : 1234,
+        },
+        'gal' : {
+            'type' : 'Gaussian',
+            'sigma' : { 'type': 'Random', 'min': 1, 'max': 2 },
+            'flux' : '$image_pos.x + image_pos.y',
+            'shear' : { 'type' : 'PowerSpectrumShear' },
+        },
+        'input' : {
+            'power_spectrum' : { 'e_power_function' : 'np.exp(-k**0.2)' },
+        },
+    }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
 
 
 @timer
@@ -1211,7 +1492,20 @@ def test_wcs():
         # This needs to be done after 'scale2', so call it zref to make sure it happens
         # alphabetically after scale2 in a sorted list.
         'zref' : '$(@image.scale2).withOrigin(galsim.PositionD(22,33))',
-        'invalid' : 34
+        'bad1' : 34,
+        'bad2' : { 'type' : 'Invalid' },
+        'bad3' : { 'type' : 'List', 'items' : galsim.PixelScale(0.12), },
+        'bad4' : { 'type' : 'List', 'items' : "galsim.PixelScale(0.12)", },
+        'bad5' : {
+            'type' : 'List',
+            'items' : [ galsim.PixelScale(0.12), galsim.PixelScale(0.23) ],
+            'index' : -1
+        },
+        'bad6' : {
+            'type' : 'List',
+            'items' : [ galsim.PixelScale(0.12), galsim.PixelScale(0.23) ],
+            'index' : 2
+        },
     }
 
     reference = {
@@ -1271,8 +1565,7 @@ def test_wcs():
         p = galsim.PositionD(23,12)
         #print(wcs.toWorld(p), ref.toWorld(p))
         if ref.isCelestial():
-            np.testing.assert_almost_equal(wcs.toWorld(p).ra.rad, ref.toWorld(p).ra.rad)
-            np.testing.assert_almost_equal(wcs.toWorld(p).dec.rad, ref.toWorld(p).dec.rad)
+            np.testing.assert_almost_equal(wcs.toWorld(p).rad, ref.toWorld(p).rad)
         else:
             np.testing.assert_almost_equal(wcs.toWorld(p).x, ref.toWorld(p).x)
             np.testing.assert_almost_equal(wcs.toWorld(p).y, ref.toWorld(p).y)
@@ -1298,8 +1591,13 @@ def test_wcs():
     wcs = galsim.config.BuildWCS(config, 'wcs', config)
     assert wcs == galsim.PixelScale(1.0)
 
-    with assert_raises(ValueError):
-        galsim.config.BuildWCS(config['image'], 'invalid', config)
+    for bad in ['bad1', 'bad2', 'bad3', 'bad4', 'bad5', 'bad6']:
+        with assert_raises(galsim.GalSimConfigError):
+            galsim.config.BuildWCS(config['image'], bad, config)
+
+    # Base class usage is invalid
+    builder = galsim.config.wcs.WCSBuilder()
+    assert_raises(NotImplementedError, builder.buildWCS, config, config, logger=None)
 
 @timer
 def test_index_key():
@@ -1453,6 +1751,11 @@ def test_index_key():
     assert 'current' not in config1['gal']['ellip']
     assert 'current' not in config1['gal']['shear']
 
+    # Finally check for invalid index_key
+    config['psf']['index_key'] = 'psf_num'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildFile(config)
+
 
 @timer
 def test_multirng():
@@ -1519,6 +1822,7 @@ def test_multirng():
             v = rngb() * 50. - 25.
             world_pos = galsim.PositionD(u,v)
             with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
                 psf_g1, psf_g2 = psf_ps.getShear(world_pos)
             if len(w) > 0:
                 assert not psf_ps.bounds.includes(world_pos)
@@ -1541,6 +1845,29 @@ def test_multirng():
         np.testing.assert_array_equal(im.array, images1[n].array)
         np.testing.assert_array_equal(im.array, images2[n].array)
         np.testing.assert_array_equal(im.array, images3[n].array)
+
+    # Finally, test invalid rng_num
+    config4 = galsim.config.CopyConfig(config)
+    config4['image']['world_pos']['rng_num'] = -1
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config4)
+    config5 = galsim.config.CopyConfig(config)
+    config5['image']['world_pos']['rng_num'] = 20
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config5)
+    config6 = galsim.config.CopyConfig(config)
+    config6['image']['world_pos']['rng_num'] = 1.3
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config6)
+    config7 = galsim.config.CopyConfig(config)
+    config7['image']['world_pos']['rng_num'] = 1
+    config7['image']['random_seed'] = 12345
+    del config7['input']
+    del config7['psf']['ellip']
+    del config7['gal']['shear']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config7)
+
 
 @timer
 def test_template():
@@ -1667,6 +1994,140 @@ def test_variable_cat_size():
     np.testing.assert_array_equal(cfg_images[1], ref_images[1])
 
 
+class BlendSetBuilder(galsim.config.StampBuilder):
+    """This is a stripped-down version of the BlendSetBuilder in examples/des/blend.py.
+    Use this to test the validity of having a StampBuilder that doesn't use a simple
+    GSObject for its "prof".
+    """
+
+    def setup(self, config, base, xsize, ysize, ignore, logger):
+        """Do the appropriate setup for a Blend stamp.
+        """
+        self.ngal = galsim.config.ParseValue(config, 'n_neighbors', base, int)[0] + 1
+        self.sep = galsim.config.ParseValue(config, 'sep', base, float)[0]
+        ignore = ignore + ['n_neighbors', 'sep']
+        return super(self.__class__, self).setup(config, base, xsize, ysize, ignore, logger)
+
+    def buildProfile(self, config, base, psf, gsparams, logger):
+        """
+        Build a list of galaxy profiles, each convolved with the psf, to use for the blend image.
+        """
+        if (base['obj_num'] % self.ngal != 0):
+            return None
+        else:
+            self.neighbor_gals = []
+            for i in range(self.ngal-1):
+                gal = galsim.config.BuildGSObject(base, 'gal', gsparams=gsparams, logger=logger)[0]
+                self.neighbor_gals.append(gal)
+                galsim.config.RemoveCurrent(base['gal'], keep_safe=True)
+
+            rng = galsim.config.GetRNG(config, base, logger, 'BlendSet')
+            ud = galsim.UniformDeviate(rng)
+            self.neighbor_pos = [galsim.PositionI(int(ud()*2*self.sep-self.sep),
+                                                  int(ud()*2*self.sep-self.sep))
+                                 for i in range(self.ngal-1)]
+            #print('neighbor positions = ',self.neighbor_pos)
+
+            self.main_gal = galsim.config.BuildGSObject(base, 'gal', gsparams=gsparams,
+                                                        logger=logger)[0]
+
+            self.profiles = [ self.main_gal ]
+            self.profiles += [ g.shift(p) for g, p in zip(self.neighbor_gals, self.neighbor_pos) ]
+            if psf:
+                self.profiles = [ galsim.Convolve(gal, psf) for gal in self.profiles ]
+            return self.profiles
+
+    def draw(self, profiles, image, method, offset, config, base, logger):
+        nx = base['stamp_xsize']
+        ny = base['stamp_ysize']
+        wcs = base['wcs']
+
+        if profiles is not None:
+            bounds = galsim.BoundsI(galsim.PositionI(0,0))
+            for pos in self.neighbor_pos:
+                bounds += pos
+            bounds = bounds.withBorder(max(nx,ny)//2 + 1)
+
+            self.full_images = []
+            for prof in profiles:
+                im = galsim.ImageF(bounds=bounds, wcs=wcs)
+                galsim.config.DrawBasic(prof, im, method, offset-im.true_center, config, base,
+                                        logger)
+                self.full_images.append(im)
+
+        k = base['obj_num'] % self.ngal
+        if k == 0:
+            center_pos = galsim.PositionI(0,0)
+        else:
+            center_pos = self.neighbor_pos[k-1]
+        xmin = int(center_pos.x) - nx//2 + 1
+        ymin = int(center_pos.y) - ny//2 + 1
+        self.bounds = galsim.BoundsI(xmin, xmin+nx-1, ymin, ymin+ny-1)
+
+        image.setZero()
+        image.wcs = wcs
+        for full_im in self.full_images:
+            assert full_im.bounds.includes(self.bounds)
+            image += full_im[self.bounds]
+
+        return image
+
+@timer
+def test_blend():
+    """Test the functionality used by the BlendSet stamp type in examples/des/blend.py.
+    Especially that it's internal "prof" is not just a single GSObject.
+    """
+    galsim.config.RegisterStampType('BlendSet', BlendSetBuilder())
+    config = {
+        'stamp' : {
+            'type' : 'BlendSet',
+            'n_neighbors' : 3,
+            'sep' : 10,
+            'size' : 64,
+        },
+        'gal' : {
+            'type' : 'Gaussian',
+            'sigma' : { 'type' : 'Random', 'min': 1, 'max': 3 },
+            'flux' : { 'type' : 'Random', 'min': 20, 'max': 300 },
+        },
+        'image' : {
+            'type' : 'Single',
+            'pixel_scale' : 0.5,
+            'random_seed' : 1234,
+        },
+    }
+
+    # First just check that this works correctly as is.
+    galsim.config.SetupConfigImageNum(config, 0, 0)
+    images = galsim.config.BuildImages(8,config)
+    for i, im in enumerate(images):
+        im.write('output/blend%02d.fits'%i)
+    # Within each blendset, the images are shifted copies of each other.
+    np.testing.assert_array_equal(images[1].array[3:64,16:64], images[0].array[0:61,9:57])
+    np.testing.assert_array_equal(images[2].array[1:62,6:54], images[0].array[0:61,9:57])
+    np.testing.assert_array_equal(images[3].array[0:61,0:48], images[0].array[0:61,9:57])
+
+    np.testing.assert_array_equal(images[5].array[0:55,9:64], images[4].array[9:64,9:64])
+    np.testing.assert_array_equal(images[6].array[5:60,1:56], images[4].array[9:64,9:64])
+    np.testing.assert_array_equal(images[7].array[0:55,0:55], images[4].array[9:64,9:64])
+
+    # If there is a current_image, then updateSkip requires special handling here.
+    config['current_image'] = galsim.Image(64,64)
+    im8 = galsim.config.BuildStamp(config, obj_num=8)
+
+    # Some reject items are invalid when using this kind of stamp.
+    config['stamp']['min_flux_frac'] = 0.3
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config, obj_num=8)
+    del config['stamp']['min_flux_frac']
+    config['stamp']['min_snr'] = 20
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config, obj_num=8)
+    del config['stamp']['min_snr']
+    config['stamp']['max_snr'] = 200
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildStamp(config, obj_num=8)
+
 
 if __name__ == "__main__":
     test_single()
@@ -1684,3 +2145,4 @@ if __name__ == "__main__":
     test_multirng()
     test_template()
     test_variable_cat_size()
+    test_blend()

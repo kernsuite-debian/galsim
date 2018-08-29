@@ -77,8 +77,8 @@ def getSkyLevel(bandpass, world_pos=None, exptime=None, epoch=2025, date=None):
     """
     # Check for cached sky level information for this filter.  If not, raise exception
     if not hasattr(bandpass, '_sky_level'):
-        raise RuntimeError("Only bandpasses returned from galsim.wfirst.getBandpasses() are"
-                           " allowed here!")
+        raise galsim.GalSimError("Only bandpasses returned from galsim.wfirst.getBandpasses() are "
+                                 "allowed here!")
 
     # Check for proper type for position, and extract the ecliptic coordinates.
     if world_pos is None:
@@ -87,7 +87,7 @@ def getSkyLevel(bandpass, world_pos=None, exptime=None, epoch=2025, date=None):
         ecliptic_lon = 90.*galsim.degrees
     else:
         if not isinstance(world_pos, galsim.CelestialCoord):
-            raise ValueError("Position (world_pos) must be supplied as a CelestialCoord!")
+            raise TypeError("world_pos must be supplied as a CelestialCoord.")
         if date is not None:
             epoch = date.year
         ecliptic_lon, ecliptic_lat = world_pos.ecliptic(epoch=epoch, date=date)
@@ -99,12 +99,9 @@ def getSkyLevel(bandpass, world_pos=None, exptime=None, epoch=2025, date=None):
     # The table only includes longitude in the range [0, 180] because there is symmetry in that a
     # negative longitude in the range[-180, 0] should have the same sky level as at the positive
     # value of longitude (given that the Sun is at 0).
-    if ecliptic_lon/galsim.degrees > 180.:
-        ecliptic_lon -= 360.*galsim.degrees
-    ecliptic_lon = abs(ecliptic_lon/galsim.degrees)*galsim.degrees
-    # And latitude symmetries:
-    if ecliptic_lat/galsim.degrees < 0.:
-        ecliptic_lat = abs(ecliptic_lat/galsim.degrees)*galsim.degrees
+    ecliptic_lon = ecliptic_lon.wrap()
+    ecliptic_lon = abs(ecliptic_lon.rad)*galsim.radians
+    ecliptic_lat = abs(ecliptic_lat.rad)*galsim.radians
     sin_ecliptic_lat = np.sin(ecliptic_lat)
 
     # Take the lookup table, and turn negative numbers (indicating failure because of proximity to
@@ -121,14 +118,15 @@ def getSkyLevel(bandpass, world_pos=None, exptime=None, epoch=2025, date=None):
     ilon = int(xlon)
     xlat -= ilat
     xlon -= ilon
-    sky_val = ( s[ilat, ilon] * (1.-xlat)*(1.-xlon) + \
-                    s[ilat, ilon+1] * (1.-xlat)*xlon + \
-                    s[ilat+1, ilon] * xlat*(1.-xlon) + \
-                    s[ilat+1, ilon+1] * xlat*xlon)
+    sky_val = (s[ilat, ilon] * (1.-xlat)*(1.-xlon) +
+               s[ilat, ilon+1] * (1.-xlat)*xlon +
+               s[ilat+1, ilon] * xlat*(1.-xlon) +
+               s[ilat+1, ilon+1] * xlat*xlon)
 
     # If the result is too large, then raise an exception: we should not look at this position!
     if sky_val > max_sky:
-        raise ValueError("Position (world_pos) is too close to sun!  Would not observe here.")
+        raise galsim.GalSimValueError("world_pos is too close to sun. Would not observe here.",
+                                      world_pos)
 
     # Now, convert to the right units, and return.  (See docstring for explanation.)
     # First, multiply by the effective collecting area in m^2.

@@ -21,9 +21,10 @@ Routines for controlling catalog input/output with GalSim.
 
 from future.utils import iteritems, iterkeys, itervalues
 from builtins import zip
-import galsim
 import os
 import numpy as np
+
+from .errors import GalSimValueError, GalSimKeyError, GalSimIndexError
 
 class Catalog(object):
     """A class storing the data from an input catalog.
@@ -79,53 +80,51 @@ class Catalog(object):
             else:
                 file_type = 'ASCII'
         file_type = file_type.upper()
-        if file_type not in ['FITS', 'ASCII']:
-            raise ValueError("file_type must be either FITS or ASCII if specified.")
+        if file_type not in ('FITS', 'ASCII'):
+            raise GalSimValueError("file_type must be either FITS or ASCII if specified.",
+                                   file_type, ('FITS', 'ASCII'))
         self.file_type = file_type
+        if comments == '': comments = None  # loadtxt actually wants None, not ''
         self.comments = comments
         self.hdu = hdu
 
         if file_type == 'FITS':
             self.readFits(hdu, _nobjects_only)
-        elif file_type == 'ASCII':
+        else:  # file_type == 'ASCII':
             self.readAscii(comments, _nobjects_only)
-        else:
-            raise ValueError("Invalid file_type %s"%file_type)
 
     # When we make a proxy of this class (cf. galsim/config/stamp.py), the attributes
     # don't get proxied.  Only callable methods are.  So make method versions of these.
     def getNObjects(self) : return self.nobjects
     def isFits(self) : return self.isfits
+    def __len__(self) : return self.nobjects
 
     def readAscii(self, comments, _nobjects_only=False):
         """Read in an input catalog from an ASCII file.
         """
+        if comments is not None and len(comments) > 1:
+            raise GalSimValueError('Invalid comments character', comments)
+
         # If all we care about is nobjects, this is quicker:
         if _nobjects_only:
             # See the script devel/testlinecounting.py that tests several possibilities.
             # An even faster version using buffering is possible although it requires some care
             # around edge cases, so we use this one instead, which is "correct by inspection".
             with open(self.file_name) as f:
-                if (len(comments) == 1):
+                if comments is not None:
                     c = comments[0]
                     self.nobjects = sum(1 for line in f if line[0] != c)
-                else:
-                    self.nobjects = sum(1 for line in f if not line.startswith(comments))
+                else:  # comments == None.  No comments.
+                    self.nobjects = sum(1 for line in f)
             return
 
         # Read in the data using the numpy convenience function
         # Note: we leave the data as str, rather than convert to float, so that if
         # we have any str fields, they don't give an error here.  They'll only give an
         # error if one tries to convert them to float at some point.
-        self.data = np.loadtxt(self.file_name, comments=comments, dtype=bytes)
+        self.data = np.loadtxt(self.file_name, comments=comments, dtype=bytes, ndmin=2)
         # Convert the bytes to str.  For Py2, this is a no op.
         self.data = self.data.astype(str)
-
-        # If only one row, then the shape comes in as one-d.
-        if len(self.data.shape) == 1:
-            self.data = self.data.reshape(1, -1)
-        if len(self.data.shape) != 2:
-            raise IOError('Unable to parse the input catalog as a 2-d array')
 
         self.nobjects = self.data.shape[0]
         self.ncols = self.data.shape[1]
@@ -134,21 +133,12 @@ class Catalog(object):
     def readFits(self, hdu, _nobjects_only=False):
         """Read in an input catalog from a FITS file.
         """
-        from galsim._pyfits import pyfits, pyfits_version
+        from ._pyfits import pyfits
         with pyfits.open(self.file_name) as fits:
-            raw_data = fits[hdu].data
-        if pyfits_version > '3.0':
-            self.names = raw_data.columns.names
-        else:
-            self.names = raw_data.dtype.names
-        self.nobjects = len(raw_data.field(self.names[0]))
+            self.data = fits[hdu].data.copy()
+        self.names = self.data.columns.names
+        self.nobjects = len(self.data)
         if (_nobjects_only): return
-        # The pyfits raw_data is a FITS_rec object, which isn't picklable, so we need to
-        # copy the fields into a new structure to make sure our Catalog is picklable.
-        # The simplest is probably a dict keyed by the field names, which we save as self.data.
-        self.data = {}
-        for name in self.names:
-            self.data[name] = raw_data.field(name)
         self.ncols = len(self.names)
         self.isfits = True
 
@@ -163,19 +153,23 @@ class Catalog(object):
         """
         if self.isfits:
             if col not in self.names:
-                raise KeyError("Column %s is invalid for catalog %s"%(col,self.file_name))
+                raise GalSimKeyError("Column is invalid for catalog %s"%self.file_name, col)
+            if not isinstance(index, int):
+                raise GalSimIndexError("Index must be an int for catalog %s"%self.file_name, index)
             if index < 0 or index >= self.nobjects:
-                raise IndexError("Object %d is invalid for catalog %s"%(index,self.file_name))
-            if index >= len(self.data[col]):
-                raise IndexError("Object %d is invalid for column %s"%(index,col))
+                raise GalSimIndexError("Index is invalid for catalog %s"%self.file_name, index)
             return self.data[col][index]
         else:
-            icol = int(col)
-            if icol < 0 or icol >= self.ncols:
-                raise IndexError("Column %d is invalid for catalog %s"%(icol,self.file_name))
+            if not isinstance(col, int):
+                raise GalSimIndexError("Column must an int for ASCII catalog %s"%self.file_name,
+                                       col)
+            if col < 0 or col >= self.ncols:
+                raise GalSimIndexError("Column is invalid for catalog %s"%self.file_name, col)
+            if not isinstance(index, int):
+                raise GalSimIndexError("Index must be an int for catalog %s"%self.file_name, index)
             if index < 0 or index >= self.nobjects:
-                raise IndexError("Object %d is invalid for catalog %s"%(index,self.file_name))
-            return self.data[index, icol]
+                raise GalSimIndexError("Index is invalid for catalog %s"%self.file_name, col)
+            return self.data[index, col]
 
     def getFloat(self, index, col):
         """Return the data for the given `index` and `col` as a float if possible
@@ -189,10 +183,8 @@ class Catalog(object):
 
     def __repr__(self):
         s = "galsim.Catalog(file_name=%r, file_type=%r"%(self.file_name, self.file_type)
-        if self.comments != '#':
-            s += ', comments=%r'%self.comments
-        if self.hdu != 1:
-            s += ', hdu=%r'%self.hdu
+        if self.comments != '#': s += ', comments=%r'%self.comments
+        if self.hdu != 1: s += ', hdu=%r'%self.hdu
         s += ')'
         return s
 
@@ -264,11 +256,12 @@ class Dict(object):
             elif ext.lower().startswith('.j'):
                 file_type = 'JSON'
             else:
-                raise ValueError('Unable to determine file_type from file_name ending')
+                raise GalSimValueError('Unable to determine file_type from file_name ending',
+                                       file_name, ('*.p*', '*.y*', '*.j*'))
 
         file_type = file_type.upper()
-        if file_type not in ['PICKLE','YAML','JSON']:
-            raise ValueError("file_type must be one of Pickle, YAML, or JSON if specified.")
+        if file_type not in ('PICKLE','YAML','JSON'):
+            raise GalSimValueError("Invalid file_type", file_type, ('Pickle', 'YAML', 'JSON'))
         self.file_type = file_type
 
         self.key_split = key_split
@@ -284,12 +277,10 @@ class Dict(object):
             import yaml
             with open(self.file_name, 'r') as f:
                 self.dict = yaml.load(f)
-        elif file_type == 'JSON':
+        else:  # JSON
             import json
             with open(self.file_name, 'r') as f:
                 self.dict = json.load(f)
-        else:
-            raise ValueError("Invalid file_type %s"%file_type)
 
     def get(self, key, default=None):
         # Make a list of keys according to our key_split parameter
@@ -307,10 +298,9 @@ class Dict(object):
             # Otherwise, return the result.
             else:
                 if k not in d and default is None:
-                    raise ValueError("key=%s not found in dictionary"%key)
+                    raise GalSimKeyError("key not found in dictionary.",key)
                 return d.get(k,default)
-
-        raise ValueError("Invalid key=%s given to Dict.get()"%key)
+        raise GalSimKeyError("Invalid key given to Dict.get()",key)
 
     # The rest of the functions are typical non-mutating functions for a dict, for which we just
     # pass the request along to self.dict.
@@ -324,7 +314,7 @@ class Dict(object):
         return key in self.dict
 
     def __iter__(self):
-        return self.dict.__iter__
+        return self.dict.__iter__()
 
     def keys(self):
         return self.dict.keys()
@@ -404,6 +394,7 @@ class OutputCatalog(object):
     def nobjects(self): return len(self.rows)
     @property
     def ncols(self): return len(self.names)
+    def __len__(self): return self.nobjects
 
     # Again, when we use this through a proxy, we need getters for the attributes.
     def getNames(self): return self.names
@@ -424,7 +415,8 @@ class OutputCatalog(object):
                             which will be used at the end to re-sort the rows.
         """
         if len(row) != self.ncols:
-            raise ValueError("Length of row does not match the number of columns")
+            raise GalSimValueError("Length of row does not match the number of columns = %d"%(
+                                   self.ncols), len(row))
         self.rows.append(tuple(row))
         if sort_key is None:
             self.sort_keys.append(self.nobjects)
@@ -454,19 +446,21 @@ class OutputCatalog(object):
             else:
                 file_type = 'ASCII'
         file_type = file_type.upper()
-        if file_type not in ['FITS', 'ASCII']:
-            raise ValueError("file_type must be either FITS or ASCII if specified.")
+        if file_type not in ('FITS', 'ASCII'):
+            raise GalSimValueError("Invalid file_type.", file_type, ('FITS', 'ASCII'))
 
         if file_type == 'FITS':
             self.writeFits(file_name)
-        elif file_type == 'ASCII':
+        else:  # file_type == 'ASCII':
             self.writeAscii(file_name, prec)
-        else:
-            raise ValueError("Invalid file_type %s"%file_type)
 
     def makeData(self):
         """Returns a numpy array of the data as it should be written to an output file.
         """
+        from .angle import Angle
+        from .position import PositionD, PositionI
+        from .shear import Shear
+
         cols = zip(*self.rows)
 
         dtypes = []
@@ -480,20 +474,20 @@ class OutputCatalog(object):
             elif dt.kind in np.typecodes['AllFloat']:
                 dtypes.append( (name, float) )
                 new_cols.append(col)
-            elif t == galsim.Angle:
+            elif t == Angle:
                 dtypes.append( (name + ".rad", float) )
                 new_cols.append( [ val.rad for val in col ] )
-            elif t == galsim.PositionI:
+            elif t == PositionI:
                 dtypes.append( (name + ".x", int) )
                 dtypes.append( (name + ".y", int) )
                 new_cols.append( [ val.x for val in col ] )
                 new_cols.append( [ val.y for val in col ] )
-            elif t == galsim.PositionD:
+            elif t == PositionD:
                 dtypes.append( (name + ".x", float) )
                 dtypes.append( (name + ".y", float) )
                 new_cols.append( [ val.x for val in col ] )
                 new_cols.append( [ val.y for val in col ] )
-            elif t == galsim.Shear:
+            elif t == Shear:
                 dtypes.append( (name + ".g1", float) )
                 dtypes.append( (name + ".g2", float) )
                 new_cols.append( [ val.g1 for val in col ] )
@@ -548,8 +542,9 @@ class OutputCatalog(object):
 
         @param file_name    The name of the file to write to.
         """
+        from .fits import writeFile
         tbhdu = self.writeFitsHdu()
-        galsim.fits.writeFile(file_name, tbhdu)
+        writeFile(file_name, tbhdu)
 
     def writeFitsHdu(self):
         """Write catalog to a FITS hdu.
@@ -559,7 +554,7 @@ class OutputCatalog(object):
         # Note to developers: Because of problems with pickling in older pyfits versions, this
         # code is duplicated in galsim/config/extra_truth.py, BuildTruthHDU.  If you change
         # this function, you should update BuildTruthHDU as well.
-        from galsim._pyfits import pyfits
+        from ._pyfits import pyfits
 
         data = self.makeData()
 
@@ -574,12 +569,7 @@ class OutputCatalog(object):
                 cols.append(pyfits.Column(name=name, format='%dA'%dt.itemsize, array=data[name]))
 
         cols = pyfits.ColDefs(cols)
-
-        # Depending on the version of pyfits, one of these should work:
-        try:
-            tbhdu = pyfits.BinTableHDU.from_columns(cols)
-        except AttributeError:  # pragma: no cover
-            tbhdu = pyfits.new_table(cols)
+        tbhdu = pyfits.BinTableHDU.from_columns(cols)
         return tbhdu
 
     def __repr__(self):

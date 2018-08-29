@@ -20,9 +20,11 @@ Module with routines to simulate CCD and NIR detector effects like nonlinearity,
 failure, interpixel capacitance, etc.
 """
 
-import galsim
 import numpy as np
 import sys
+
+from .image import Image
+from .errors import GalSimRangeError, GalSimValueError, GalSimIncompatibleValuesError, galsim_warn
 
 def applyNonlinearity(self, NLfunc, *args):
     """
@@ -72,9 +74,10 @@ def applyNonlinearity(self, NLfunc, *args):
     # Extract out the array from Image since not all functions can act directly on Images
     result = NLfunc(self.array,*args)
     if not isinstance(result, np.ndarray):
-        raise ValueError("NLfunc does not return a NumPy array.")
+        raise GalSimValueError("NLfunc does not return a NumPy array.", NLfunc)
     if self.array.shape != result.shape:
-        raise ValueError("NLfunc does not return a NumPy array of the same shape as input!")
+        raise GalSimValueError("NLfunc does not return a NumPy array of the same shape as input.",
+                               NLfunc)
     self.array[:,:] = result
 
 
@@ -131,16 +134,18 @@ def addReciprocityFailure(self, exp_time, alpha, base_flux):
                             value.
     """
 
-    if not isinstance(alpha, float) or alpha < 0.:
-        raise ValueError("Invalid value of alpha, must be float >= 0")
-    if not (isinstance(exp_time, float) or isinstance(exp_time, int)) or exp_time < 0.:
-        raise ValueError("Invalid value of exp_time, must be float or int >= 0")
-    if not (isinstance(base_flux, float) or isinstance(base_flux,int)) or base_flux < 0.:
-        raise ValueError("Invalid value of base_flux, must be float or int >= 0")
+    if alpha < 0.:
+        raise GalSimRangeError("Invalid value of alpha, must be >= 0",
+                               alpha, 0, None)
+    if exp_time < 0.:
+        raise GalSimRangeError("Invalid value of exp_time, must be >= 0",
+                               exp_time, 0, None)
+    if base_flux < 0.:
+        raise GalSimRangeError("Invalid value of base_flux, must be >= 0",
+                               base_flux, 0, None)
 
     if np.any(self.array<0):
-        import warnings
-        warnings.warn("One or more pixel values are negative and will be set as 'nan'.")
+        galsim_warn("One or more pixel values are negative and will be set as 'nan'.")
 
     p0 = exp_time*base_flux
     a = alpha/np.log(10)
@@ -200,25 +205,20 @@ def applyIPC(self, IPC_kernel, edge_treatment='extend', fill_value=None, kernel_
     @returns None
     """
 
-    # IPC kernel has to be a 3x3 Image instance
-    if not isinstance(IPC_kernel,galsim.Image):
-        raise ValueError("IPC_kernel must be an Image instance .")
+    # IPC kernel has to be a 3x3 Image
     ipc_kernel = IPC_kernel.array
     if not ipc_kernel.shape==(3,3):
-        raise ValueError("IPC kernel must be an Image instance of size 3x3.")
+        raise GalSimValueError("IPC kernel must be an Image instance of size 3x3.", IPC_kernel)
 
     # Check for non-negativity of the kernel
-    if kernel_nonnegativity is True:
-        if (ipc_kernel<0).any() is True:
-            raise ValueError("IPC kernel must not contain negative entries")
+    if kernel_nonnegativity and (ipc_kernel<0).any():
+        raise GalSimValueError("IPC kernel must not contain negative entries", IPC_kernel)
 
     # Check and enforce correct normalization for the kernel
-    if kernel_normalization is True:
-        if abs(ipc_kernel.sum() - 1.0) > 10.*np.finfo(ipc_kernel.dtype.type).eps:
-            import warnings
-            warnings.warn("The entries in the IPC kernel did not sum to 1. Scaling the kernel to "\
-                +"ensure correct normalization.")
-            IPC_kernel = IPC_kernel/ipc_kernel.sum()
+    if kernel_normalization and abs(ipc_kernel.sum()-1) > 10.*np.finfo(ipc_kernel.dtype.type).eps:
+        galsim_warn("The entries in the IPC kernel did not sum to 1. Scaling the kernel to "
+                    "ensure correct normalization.")
+        IPC_kernel = IPC_kernel/ipc_kernel.sum()
 
     # edge_treatment can be 'extend', 'wrap' or 'crop'
     if edge_treatment=='crop':
@@ -238,7 +238,8 @@ def applyIPC(self, IPC_kernel, edge_treatment='extend', fill_value=None, kernel_
         pad_array[:,0] = pad_array[:,-2]
         pad_array[:,-1] = pad_array[:,1]
     else:
-        raise ValueError("edge_treatment has to be one of 'extend', 'wrap' or 'crop'. ")
+        raise GalSimValueError("Invalid edge_treatment.", edge_treatment,
+                               ('extend', 'wrap', 'crop'))
 
     # Generating different segments of the padded array
     center = pad_array[1:-1,1:-1]
@@ -265,13 +266,10 @@ def applyIPC(self, IPC_kernel, edge_treatment='extend', fill_value=None, kernel_
         self.array[1:-1,1:-1] = out_array
         #Explicit edge effects handling with filling the edges with the value given in fill_value
         if fill_value is not None:
-            if isinstance(fill_value, float) or isinstance(fill_value, int):
-                self.array[0,:] = fill_value
-                self.array[-1,:] = fill_value
-                self.array[:,0] = fill_value
-                self.array[:,-1] = fill_value
-            else:
-                raise ValueError("'fill_value' must be either a float or an int")
+            self.array[0,:] = fill_value
+            self.array[-1,:] = fill_value
+            self.array[:,0] = fill_value
+            self.array[:,-1] = fill_value
     else:
         self.array[:,:] = out_array
 
@@ -299,33 +297,16 @@ def applyPersistence(self,imgs,coeffs):
 
         >>> img.applyPersistence(imgs=img_list, coeffs=coeffs_list)
 
-    @ param imgs        A list of previous Image instances that still persist.
-    @ param coeffs      A list of floats that specifies the retention factors for the corresponding
+    @param imgs        A list of previous Image instances that still persist.
+    @param coeffs      A list of floats that specifies the retention factors for the corresponding
                         Image instances listed in 'imgs'.
 
-    @ returns None
+    @returns None
     """
-
-    if not hasattr(imgs,'__iter__') or not hasattr(coeffs,'__iter__'):
-        raise TypeError("Type mismatch between 'imgs' and 'coeffs' in 'applyPersistence' routine. "
-                        "'imgs' must be a list of Image instances and 'coeffs' must be a list of "
-                        "floats of the same length.")
-
     if not len(imgs)==len(coeffs):
-        raise TypeError("The length of 'imgs' and 'coeffs' must be the same, if passed as a "
-                        "list")
-        # If this error is not raised, then the images are added as long as one of the list is
-        # exhausted.
-
+        raise GalSimIncompatibleValuesError("The length of 'imgs' and 'coeffs' must be the same",
+                                            imgs=imgs, coeffs=coeffs)
     for img,coeff in zip(imgs,coeffs):
-        if not isinstance(img,galsim.Image):
-            raise ValueError("In 'applyPersistence', the objects in 'imgs' must be "
-                             "galsim.Image instances")
-
-        if not isinstance(coeff,float):
-            raise ValueError("In 'applyPersistence', the objects in 'coeffs' must be "
-                             "of type float")
-
         self += coeff*img
 
 def quantize(self):
@@ -351,8 +332,8 @@ def quantize(self):
     self.applyNonlinearity(np.round)
 
 
-galsim.Image.applyNonlinearity = applyNonlinearity
-galsim.Image.addReciprocityFailure = addReciprocityFailure
-galsim.Image.applyIPC = applyIPC
-galsim.Image.applyPersistence = applyPersistence
-galsim.Image.quantize = quantize
+Image.applyNonlinearity = applyNonlinearity
+Image.addReciprocityFailure = addReciprocityFailure
+Image.applyIPC = applyIPC
+Image.applyPersistence = applyPersistence
+Image.quantize = quantize

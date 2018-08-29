@@ -28,14 +28,8 @@ import json
 import re
 import glob
 
+import galsim
 from galsim_test_helpers import *
-
-try:
-    import galsim
-except ImportError:
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
 
 
 @timer
@@ -134,10 +128,31 @@ def test_fits():
     # multithreading starts.  But with a regular logger, there really is profiling output.
     assert "Starting separate profiling for each of the" in cl.output
 
-    # If there is no output field, the default behavior is to write to root.fits.
+    # Check some public API utility functions
+    assert galsim.config.GetNFiles(config) == 6
+    assert galsim.config.GetNImagesForFile(config, 0) == 1
+    assert galsim.config.GetNObjForFile(config, 0, 0) == [1]
+
+    # Check invalid output type
+    config['output']['type'] = 'invalid'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildFile(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.Process(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.GetNImagesForFile(config, 0)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.GetNObjForFile(config, 0, 0)
+
+    # If there is no output field, it raises an error when trying to do BuildFile.
     os.remove('output_fits/test_fits_0.fits')
     config = galsim.config.CopyConfig(config1)
     del config['output']
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildFile(config)
+
+    # However, when run from a real config file, the processing will write a 'root' field,
+    # which it will use for the default behavior to write to root.fits.
     config['root'] = 'output_fits/test_fits_0'
     galsim.config.BuildFile(config)
     im2 = galsim.fits.read('output_fits/test_fits_0.fits')
@@ -175,6 +190,10 @@ def test_multifits():
         im1_list.append(im1)
     print('multifit image shapes = ',[im.array.shape for im in im1_list])
 
+    assert galsim.config.GetNFiles(config) == 1
+    assert galsim.config.GetNImagesForFile(config, 0) == 6
+    assert galsim.config.GetNObjForFile(config, 0, 0) == [1, 1, 1, 1, 1, 1]
+
     galsim.config.Process(config)
     im2_list = galsim.fits.readMulti('output/test_multifits.fits')
     for k in range(nimages):
@@ -189,16 +208,16 @@ def test_multifits():
 
     # Check error message for missing nimages
     del config['output']['nimages']
-    with assert_raises(AttributeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildFile(config)
     # Also if there is an input field that doesn't have nobj capability
     config['input'] = { 'dict' : { 'dir' : 'config_input', 'file_name' : 'dict.p' } }
-    with assert_raises(AttributeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildFile(config)
 
     # However, an input field that does have nobj will return something for nobjects.
     # This catalog has 3 rows, so equivalent to nobjects = 3
-    del config['input_objs']
+    config = galsim.config.CleanConfig(config)
     config['input'] = { 'catalog' : { 'dir' : 'config_input', 'file_name' : 'catalog.txt' } }
     galsim.config.BuildFile(config)
     im4_list = galsim.fits.readMulti('output/test_multifits.fits')
@@ -243,6 +262,10 @@ def test_datacube():
         im1_list.append(im1)
     print('datacube image shapes = ',[im.array.shape for im in im1_list])
 
+    assert galsim.config.GetNFiles(config) == 1
+    assert galsim.config.GetNImagesForFile(config, 0) == 6
+    assert galsim.config.GetNObjForFile(config, 0, 0) == [1, 1, 1, 1, 1, 1]
+
     galsim.config.Process(config)
     im2_list = galsim.fits.readCube('output/test_datacube.fits')
     for k in range(nimages):
@@ -257,16 +280,16 @@ def test_datacube():
 
     # Check error message for missing nimages
     del config['output']['nimages']
-    with assert_raises(AttributeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildFile(config)
     # Also if there is an input field that doesn't have nobj capability
     config['input'] = { 'dict' : { 'dir' : 'config_input', 'file_name' : 'dict.p' } }
-    with assert_raises(AttributeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildFile(config)
 
     # However, an input field that does have nobj will return something for nobjects.
     # This catalog has 3 rows, so equivalent to nobjects = 3
-    del config['input_objs']
+    config = galsim.config.CleanConfig(config)
     config['input'] = { 'catalog' : { 'dir' : 'config_input', 'file_name' : 'catalog.txt' } }
     galsim.config.BuildFile(config)
     im4_list = galsim.fits.readCube('output/test_datacube.fits')
@@ -279,7 +302,7 @@ def test_datacube():
     config['output']['weight'] = { 'hdu' : 1 }
     config['output']['badpix'] = { 'file_name' : 'output/test_datacube_bp.fits' }
     config['image']['noise'] = { 'type' : 'Gaussian', 'variance' : 0.1 }
-    with assert_raises(AttributeError):
+    with assert_raises(galsim.GalSimConfigError):
         galsim.config.BuildFile(config)
 
     # But if both weight and badpix are files, then it should work.
@@ -380,6 +403,15 @@ def test_skip():
     assert "Splitting work into 3 jobs.  Doing job 3" in cl.output
     assert "Building 2 out of 6 total files: file_num = 4 .. 5" in cl.output
 
+    # job < 1 or job > njobs is invalid
+    with assert_raises(galsim.GalSimValueError):
+        galsim.config.Process(config, njobs=3, job=0)
+    with assert_raises(galsim.GalSimValueError):
+        galsim.config.Process(config, njobs=3, job=4)
+    # Also njobs < 1 is invalid
+    with assert_raises(galsim.GalSimValueError):
+        galsim.config.Process(config, njobs=0)
+
 
 @timer
 def test_extra_wt():
@@ -409,14 +441,53 @@ def test_extra_wt():
 
     galsim.config.Process(config)
 
+    main_im = [ galsim.fits.read('output/test_main_%d.fits'%k) for k in range(nfiles) ]
     for k in range(nfiles):
         im_wt = galsim.fits.read('output/test_wt_%d.fits'%k)
         np.testing.assert_almost_equal(im_wt.array, 1./(0.7 + k))
         im_bp = galsim.fits.read('output/test_bp_%d.fits'%k)
         np.testing.assert_array_equal(im_bp.array, 0)
+        os.remove('output/test_main_%d.fits'%k)
+
+    # If noclobber = True, don't overwrite existing file.
+    config['noise'] = { 'type' : 'Poisson', 'sky_level_pixel' : 500 }
+    config['output']['noclobber'] = True
+    galsim.config.RemoveCurrent(config)
+    with CaptureLog() as cl:
+        galsim.config.Process(config, logger=cl.logger)
+    assert 'Not writing weight file 0 = output/test_wt_0.fits' in cl.output
+    for k in range(nfiles):
+        im = galsim.fits.read('output/test_main_%d.fits'%k)
+        np.testing.assert_equal(im.array, main_im[k].array)
+        im_wt = galsim.fits.read('output/test_wt_%d.fits'%k)
+        np.testing.assert_almost_equal(im_wt.array, 1./(0.7 + k))
+
+    # Can also add these as extra hdus rather than separate files.
+    config['output']['noclobber'] = False
+    config['output']['weight'] = { 'hdu' : 1 }
+    config['output']['badpix'] = { 'hdu' : 2 }
+    galsim.config.RemoveCurrent(config)
+    galsim.config.Process(config)
+    for k in range(nfiles):
+        im_wt = galsim.fits.read('output/test_main_%d.fits'%k, hdu=1)
+        np.testing.assert_almost_equal(im_wt.array, 1./(0.7 + k))
+        im_bp = galsim.fits.read('output/test_main_%d.fits'%k, hdu=2)
+        np.testing.assert_array_equal(im_bp.array, 0)
+
+    config['output']['badpix'] = { 'hdu' : 0 }
+    galsim.config.RemoveCurrent(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.Process(config, except_abort=True)
+    config['output']['badpix'] = { 'hdu' : 1 }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.Process(config, except_abort=True)
+    config['output']['badpix'] = { 'hdu' : 3 }
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.Process(config, except_abort=True)
 
     # If include_obj_var = True, then weight image includes signal.
     config['output']['weight']['include_obj_var'] = True
+    config['output']['badpix'] = { 'hdu' : 2 }
     config['output']['nproc'] = 2
     galsim.config.RemoveCurrent(config)
     galsim.config.Process(config)
@@ -425,8 +496,34 @@ def test_extra_wt():
         sigma = ud() + 1.
         gal = galsim.Gaussian(sigma=sigma, flux=100)
         im = gal.drawImage(scale=0.4)
-        im_wt = galsim.fits.read('output/test_wt_%d.fits'%k)
+        im_wt = galsim.fits.read('output/test_main_%d.fits'%k, hdu=1)
         np.testing.assert_almost_equal(im_wt.array, 1./(0.7 + k + im.array))
+
+    # It is permissible for weight, badpix to have no output.  Some use cases require building
+    # the weight and/or badpix information even if it is not associated with any output.
+    config['output']['weight'] = {}
+    config['output']['badpix'] = {}
+    galsim.config.RemoveCurrent(config)
+    galsim.config.Process(config)
+    for k in range(nfiles):
+        assert_raises(OSError, galsim.fits.read, 'output/test_main_%d.fits'%k, hdu=1)
+        os.remove('output/test_wt_%d.fits'%k)
+        os.remove('output/test_main_%d.fits'%k)
+
+    # Can also have both outputs
+    config['output']['weight'] = { 'file_name': "$'output/test_wt_%d.fits'%file_num", 'hdu': 1 }
+    galsim.config.RemoveCurrent(config)
+    galsim.config.Process(config, except_abort=True)
+    for k in range(nfiles):
+        im_wt1 = galsim.fits.read('output/test_wt_%d.fits'%k)
+        np.testing.assert_almost_equal(im_wt1.array, 1./(0.7 + k))
+        im_wt2 = galsim.fits.read('output/test_main_%d.fits'%k, hdu=1)
+        np.testing.assert_almost_equal(im_wt2.array, 1./(0.7 + k))
+
+    # Other such use cases would access the final weight or badpix image using GetFinalExtraOutput
+    galsim.config.BuildFile(config)
+    wt = galsim.config.extra.GetFinalExtraOutput('weight', config)
+    np.testing.assert_almost_equal(wt[0].array, 1./0.7)
 
     # If the image is a Scattered type, then the weight adn badpix images are built by a
     # different code path.
@@ -704,6 +801,85 @@ def test_extra_psf():
     assert "Not writing psf file 4 = output_psf/test_psf.fits because already written" in cl.output
     assert "Not writing psf file 5 = output_psf/test_psf.fits because already written" in cl.output
 
+@timer
+def test_extra_psf_sn():
+    """Test the signal_to_noise option of the extra psf field
+    """
+    config = {
+        'image' : {
+            'random_seed' : 1234,
+            'pixel_scale' : 0.4,
+            'size' : 64,
+        },
+        'gal' : {
+            'type' : 'Gaussian',
+            'sigma' : 2.3,
+            'flux' : 100,
+        },
+        'psf' : {
+            'type' : 'Moffat',
+            'beta' : 3.5,
+            'fwhm' : 0.7,
+        },
+        'output' : {
+            'psf' : {}
+        },
+    }
+    # First pure psf image with no noise.
+    gal_image = galsim.config.BuildImage(config)
+    pure_psf_image = galsim.config.extra.GetFinalExtraOutput('psf', config)[0]
+    np.testing.assert_almost_equal(pure_psf_image.array.sum(), 1., decimal=6)
+
+    # Draw PSF at S/N = 100
+    # (But first check that an error is raised if noise is missing.
+    config['output']['psf']['signal_to_noise'] = 100
+    galsim.config.RemoveCurrent(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    noise_var = 20.
+    config['image']['noise'] = { 'type' : 'Gaussian', 'variance' : noise_var, }
+    gal_image = galsim.config.BuildImage(config)
+    sn100_psf_image = galsim.config.extra.GetFinalExtraOutput('psf', config)[0]
+    sn100_flux = sn100_psf_image.array.sum()
+    psf_noise = sn100_psf_image - sn100_flux * pure_psf_image
+    print('psf_noise.var = ',psf_noise.array.var(), noise_var)
+    np.testing.assert_allclose(psf_noise.array.var(), noise_var, rtol=0.02)
+    snr = np.sqrt( np.sum(sn100_psf_image.array**2, dtype=float) / noise_var )
+    print('snr = ',snr, 100)
+    np.testing.assert_allclose(snr, 100, rtol=0.2)  # Not super accurate for any single image.
+
+    # Can also specify different draw_methods.
+    config['output']['psf']['draw_method'] = 'real_space'
+    galsim.config.RemoveCurrent(config)
+    gal_image = galsim.config.BuildImage(config)
+    real_psf_image = galsim.config.extra.GetFinalExtraOutput('psf', config)[0]
+    print('real flux = ', real_psf_image.array.sum(), sn100_flux)
+    np.testing.assert_allclose(real_psf_image.array.sum(), sn100_flux, rtol=1.e-4)
+
+    # phot is invalid with signal_to_noise
+    config['output']['psf']['draw_method'] = 'phot'
+    galsim.config.RemoveCurrent(config)
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # Check for other invalid input
+    config['output']['psf']['draw_method'] = 'input'
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+    config['output']['psf']['draw_method'] = 'auto'
+    config['output']['psf']['flux'] = sn100_flux
+    with assert_raises(galsim.GalSimConfigError):
+        galsim.config.BuildImage(config)
+
+    # OK to use phot with flux.
+    config['output']['psf']['draw_method'] = 'phot'
+    del config['output']['psf']['signal_to_noise']
+    gal_image = galsim.config.BuildImage(config)
+    phot_psf_image = galsim.config.extra.GetFinalExtraOutput('psf', config)[0]
+    print('phot flux = ', phot_psf_image.array.sum(), sn100_flux)
+    np.testing.assert_allclose(phot_psf_image.array.sum(), sn100_flux, rtol=1.e-4)
+
 
 @timer
 def test_extra_truth():
@@ -776,7 +952,7 @@ def test_retry_io():
         def writeFile(self, *args, **kwargs):
             p = self.ud()
             if p < 0.33:
-                raise IOError("p = %f"%p)
+                raise OSError("p = %f"%p)
             else:
                 galsim.fits.writeMulti(*args, **kwargs)
 
@@ -818,10 +994,10 @@ def test_retry_io():
     with CaptureLog() as cl:
         galsim.config.Process(config, logger=cl.logger)
     #print(cl.output)
-    assert "File output/test_flaky_fits_0.fits: Caught IOError" in cl.output
+    assert "File output/test_flaky_fits_0.fits: Caught OSError" in cl.output
     assert "This is try 2/6, so sleep for 2 sec and try again." in cl.output
     assert "file 0: Wrote FlakyFits to file 'output/test_flaky_fits_0.fits'" in cl.output
-    assert "File output/test_flaky_wt_0.fits: Caught IOError: " in cl.output
+    assert "File output/test_flaky_wt_0.fits: Caught OSError: " in cl.output
     assert "This is try 1/6, so sleep for 1 sec and try again." in cl.output
     assert "file 0: Wrote flaky_weight to 'output/test_flaky_wt_0.fits'" in cl.output
 
@@ -881,7 +1057,7 @@ def test_retry_io():
     with CaptureLog() as cl:
         try:
             galsim.config.Process(config, logger=cl.logger, except_abort=True)
-        except IOError as e:
+        except OSError as e:
             assert str(e) == "p = 0.126989"
     #print(cl.output)
     assert "File output/test_flaky_fits_0.fits not written." in cl.output
@@ -945,7 +1121,7 @@ def test_config():
     assert config == config5
 
     # Copying deep copies and removes any existing input_manager
-    config4['input_manager'] = 'an input manager'
+    config4['_input_manager'] = 'an input manager'
     config7 = galsim.config.CopyConfig(config4)
     assert config == config7
 
@@ -1050,7 +1226,7 @@ def test_eval_full_word():
                 'str' : "math.sqrt(pos.x**2 + pos.y**2)",
                 'ppos' : {
                     'type' : 'Eval',
-                    'str' : "world_center.project(world_pos)",
+                    'str' : "galsim.PositionD((uv/galsim.arcsec for uv in world_center.project(world_pos)))",
                     'cworld_pos' : "@image.world_pos"
                 }
             },
@@ -1080,7 +1256,6 @@ def test_eval_full_word():
                 'units': 'arcsec',
                 'grid_spacing': 10,
                 'ngrid': '$math.ceil(2*focal_rmax / @input.power_spectrum.grid_spacing)',
-                'center': "0,0",
             },
         },
 
@@ -1189,7 +1364,7 @@ def test_eval_full_word():
     logger = logging.getLogger('test_eval_full_word')
     logger.addHandler(logging.StreamHandler(sys.stdout))
     logger.setLevel(logging.DEBUG)
-    galsim.config.Process(config, logger=logger)
+    galsim.config.Process(config, logger=logger, except_abort=True)
 
     # First check the truth catalogs
     data0 = np.genfromtxt('output/test_eval_full_word_0.dat', names=True, deletechars='')
@@ -1251,6 +1426,7 @@ if __name__ == "__main__":
     test_skip()
     test_extra_wt()
     test_extra_psf()
+    test_extra_psf_sn()
     test_extra_truth()
     test_retry_io()
     test_config()

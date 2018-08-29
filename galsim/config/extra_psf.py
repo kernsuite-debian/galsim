@@ -22,6 +22,7 @@ import numpy as np
 import logging
 
 # The psf extra output type builds an Image of the PSF at the same locations as the galaxies.
+from .stamp import valid_draw_methods
 
 # The code the actually draws the PSF on a postage stamp.
 def DrawPSFStamp(psf, config, base, bounds, offset, method, logger):
@@ -32,24 +33,39 @@ def DrawPSFStamp(psf, config, base, bounds, offset, method, logger):
     """
     if 'draw_method' in config:
         method = galsim.config.ParseValue(config,'draw_method',base,str)[0]
-        if method not in ['auto', 'fft', 'phot', 'real_space', 'no_pixel', 'sb']:
-            raise AttributeError("Invalid draw_method: %s"%method)
+        if method not in valid_draw_methods:
+            raise galsim.GalSimConfigValueError("Invalid draw_method.", method, valid_draw_methods)
     else:
         method = 'auto'
 
+    if 'flux' in config:
+        flux = galsim.config.ParseValue(config,'flux',base,float)[0]
+        psf = psf.withFlux(flux)
+
+    if method == 'phot':
+        rng = galsim.config.GetRNG(config, base)
+        n_photons = psf.flux
+    else:
+        rng = None
+        n_photons = 0
+
     wcs = base['wcs'].local(base['image_pos'])
     im = galsim.ImageF(bounds, wcs=wcs)
-    im = psf.drawImage(image=im, offset=offset, method=method)
+    im = psf.drawImage(image=im, offset=offset, method=method, rng=rng, n_photons=n_photons)
 
     if 'signal_to_noise' in config:
+        if 'flux' in config:
+            raise galsim.GalSimConfigError(
+                "Cannot specify both flux and signal_to_noise for psf output")
         if method == 'phot':
-            raise NotImplementedError(
+            raise galsim.GalSimConfigError(
                 "signal_to_noise option not implemented for draw_method = phot")
 
         if 'image' in base and 'noise' in base['image']:
             noise_var = galsim.config.CalculateNoiseVariance(base)
         else:
-            raise AttributeError("Need to specify noise level when using psf.signal_to_noise")
+            raise galsim.GalSimConfigError(
+                "Need to specify noise level when using psf.signal_to_noise")
 
         sn_target = galsim.config.ParseValue(config, 'signal_to_noise', base, float)[0]
 
