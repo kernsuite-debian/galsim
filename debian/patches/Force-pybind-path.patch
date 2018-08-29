@@ -1,0 +1,13 @@
+Description: Force pybind path
+
+--- galsim-2.0.6.orig/setup.py
++++ galsim-2.0.6/setup.py
+@@ -544,7 +544,7 @@ def add_dirs(builder, output=False):
+             print("   ",pybind11.get_include(False))
+             raise OSError("Could not find PyBind11")
+ 
+-        try_dir = pybind11.get_include(user=user)
++        try_dir = '/usr/include'
+         print('  ',try_dir,end='')
+         if os.path.isfile(os.path.join(try_dir, 'pybind11/pybind11.h')):
+             print('  (yes)')
