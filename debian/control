@@ -19,7 +19,8 @@ Build-Depends:
  python-future,
  python-yaml,
  python-pandas,
- python-future
+ python-future,
+ python-eigency
 Standards-Version: 3.9.7
 Homepage: https://github.com/GalSim-developers/GalSim
 X-Python-Version: >= 2.7

@@ -1,7 +1,4 @@
-galsim (2.0.6-1) bionic; urgency=medium
-
-  [ Athanaseus Javas Ramaila ]
-  * New upstream version 1.6.0
+galsim (2.0.6-1) UNRELEASED; urgency=medium
 
   [ Gijs Molenaar ]
   * New upstream version 2.0.6

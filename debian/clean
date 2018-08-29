@@ -1,3 +1,4 @@
+.eggs/
 galsim/_galsim.so
 galsim/_version.pyc
 pysrc/.obj/
@@ -11,3 +12,4 @@ gs.error
 galsim/_version.pyc
 galsim/meta_data.py
 include/galsim/Version.h
+gs_error.txt
